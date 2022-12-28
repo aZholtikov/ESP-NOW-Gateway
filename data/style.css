@@ -1,0 +1,70 @@
+body {
+    font-family: "Gill Sans", sans-serif;
+    background: rgb(255, 255, 255);
+}
+
+.box {
+    width: 400px;
+    padding: 20px 20px;
+    margin: 20px auto;
+    background: #e0f5fb;
+    box-shadow: 4px 4px 30px rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+}
+
+h1 {
+    color: rgb(65, 125, 238);
+    text-align: center;
+}
+
+.text {
+    font-weight: 600;
+    flex-shrink: 0;
+    margin-right: 10px;
+}
+
+.wrapper {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+input {
+    width: 48%;
+    min-height: 30px;
+    border-radius: 5px;
+    border: none;
+    margin-bottom: 10px;
+    padding: 0 10px;
+    color: rgb(0, 0, 0);
+    background: #a3e0f1;
+    transition: .5s;
+}
+
+input:hover {
+    background: white;
+    cursor: pointer;
+}
+
+.btn {
+    width: 48%;
+    background: rgb(65, 125, 238);
+    color: white;
+    transition: .5s;
+}
+
+.btn:hover {
+    background: rgb(65, 125, 238);
+    opacity: 0.5;
+    transform: translatey(-3px);
+}
+
+#deviceName,
+#espnowNetName,
+#topicPrefix {
+    width: 100%;
+}
+
+.wrapper.wrapper--end {
+    align-items: baseline;
+}

@@ -1,0 +1,66 @@
+<html>
+
+<head>
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=0.9">
+    <link rel="stylesheet" href="style.css">
+    <script type="text/javascript" src="function.js"></script>
+    <title>ESP-NOW Gateway</title>
+</head>
+
+<body onload="load();">
+    <form class="box">
+        <h1>ESP-NOW Gateway </h1>
+        <div class="wrapper">
+            <p class="text">Firmware:</p>
+            <p class="text" id="version"></p>
+            <input id="firmware" value="{{firmware}}" hidden />
+        </div>
+
+        <div class="wrapper">
+            <p class="text">Device name:</p>
+            <input id="deviceName" value="{{deviceName}}" placeholder="Name" autocomplete="off" label
+                title="ESP-NOW device name (up to 150 characters)" />
+        </div>
+
+        <div class="wrapper">
+            <p class="text">ESP-NOW network name:</p>
+            <input id="espnowNetName" value="{{espnowNetName}}" placeholder="Name" autocomplete="off" label
+                title="ESP-NOW network name (1 to 20 characters)" />
+        </div>
+
+        <p class="text">WiFi settings</p>
+        <div class="wrapper">
+            <input id="ssid" value="{{ssid}}" placeholder="SSID" label title="WiFi network name" />
+            <input id="password" value="{{password}}" onfocus="this.type='text'" type="password" placeholder="Password"
+                autocomplete="off" label title="WiFi password" />
+        </div>
+
+        <p class="text">MQTT settings</p>
+        <div class="wrapper">
+            <input id="mqttHostName" value="{{mqttHostName}}" placeholder="URL or IP" label
+                title="MQTT server URL or IP" />
+            <input id="mqttHostPort" value="{{mqttHostPort}}" placeholder="Port" label title="MQTT server port" />
+        </div>
+
+        <div class="wrapper">
+            <input id="mqttUserLogin" value="{{mqttUserLogin}}" placeholder="Login" label
+                title="MQTT server user login" />
+            <input id="mqttUserPassword" value="{{mqttUserPassword}}" onfocus="this.type='text'" type="password"
+                placeholder="Password" autocomplete="off" label title="MQTT server user password" />
+        </div>
+
+        <div class="wrapper">
+            <p class="text">MQTT topic prefix:</p>
+            <input id="topicPrefix" value="{{topicPrefix}}" placeholder="Prefix" label
+                title="MQTT messages topic prefix" />
+        </div>
+
+        <div class="wrapper">
+            <input class="btn" type="submit" value="Save" onclick="saveSetting(this);">
+            <input class="btn" type="submit" value="Restart" onclick="restart(this);">
+        </div>
+    </form>
+</body>
+
+</html>
