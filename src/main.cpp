@@ -50,7 +50,7 @@ String mqttUserLogin{""};
 String mqttUserPassword{""};
 String topicPrefix{"homeassistant"};
 
-bool isWasConnectionToWifi{false};
+bool wasConnectionToWifi{false};
 
 ZHNetwork myNet;
 AsyncWebServer webServer(80);
@@ -470,14 +470,14 @@ void connectToWifi()
         {
             if (WiFi.status() == WL_CONNECTED)
             {
-                isWasConnectionToWifi = true;
+                wasConnectionToWifi = true;
                 wifiReconnectTimer.detach();
                 mqttClient.connect();
                 return;
             }
             if (WiFi.status() == WL_CONNECT_FAILED)
             {
-                if (!isWasConnectionToWifi)
+                if (!wasConnectionToWifi)
                 {
                     WiFi.mode(WIFI_AP);
                     WiFi.softAP(("ESP-NOW Gateway " + myNet.getNodeMac()).c_str(), "12345678");
@@ -492,7 +492,7 @@ void connectToWifi()
         WiFi.mode(WIFI_OFF); // Without rebooting WiFi stops working ESP-NOW.
         myNet.begin(espnowNetName.c_str());
     }
-    if (!isWasConnectionToWifi)
+    if (!wasConnectionToWifi)
     {
         WiFi.mode(WIFI_AP);
         WiFi.softAP(("ESP-NOW Gateway " + myNet.getNodeMac()).c_str(), "12345678");
