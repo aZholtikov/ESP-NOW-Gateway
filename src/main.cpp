@@ -480,7 +480,7 @@ void connectToWifi()
                 if (!isWasConnectionToWifi)
                 {
                     WiFi.mode(WIFI_AP);
-                    WiFi.softAP(String("ESP-NOW Gateway " + myNet.getNodeMac()).c_str(), "12345678");
+                    WiFi.softAP(("ESP-NOW Gateway " + myNet.getNodeMac()).c_str(), "12345678");
                 }
                 return;
             }
@@ -495,7 +495,7 @@ void connectToWifi()
     if (!isWasConnectionToWifi)
     {
         WiFi.mode(WIFI_AP);
-        WiFi.softAP(String("ESP-NOW Gateway " + myNet.getNodeMac()).c_str(), "12345678");
+        WiFi.softAP(("ESP-NOW Gateway " + myNet.getNodeMac()).c_str(), "12345678");
     }
 }
 
