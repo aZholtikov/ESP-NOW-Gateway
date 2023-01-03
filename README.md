@@ -4,7 +4,7 @@ Gateway for data exchange between ESP-NOW devices and MQTT broker via WiFi.
 
 ## Features
 
-1. The first time turn on (or after rebooting) creates an access point named "ESP-NOW Gateway XXXXXXXXXXXX" with password "12345678" (IP 192.168.4.1) if fails to connect to WiFi. In case of lost a WiFi connection after successfuly connection search the required WiFi SSID availability every 30 seconds.
+1. Creates an access point named "ESP-NOW Gateway XXXXXXXXXXXX" with password "12345678" (IP 192.168.4.1).
 2. Possibility a device search through the Windows Network Environment via SSDP.
 3. Periodically transmission of system information to the MQTT broker (every 60 seconds) and availability status to the ESP-NOW network and to the MQTT broker (every 10 seconds).
 4. Automatically adds gateway configuration to Home Assistan via MQTT discovery as a binary_sensor.
@@ -22,6 +22,11 @@ Gateway for data exchange between ESP-NOW devices and MQTT broker via WiFi.
 1. ESP-NOW network name must be set same of all another ESP-NOW devices in network.
 2. Upload the "data" folder (with web interface) into the filesystem before flashing.
 3. WiFi router must be set on channel 1.
+
+## Tested on
+
+1. NodeMCU 1.0 (ESP-12E Module). Unstable work.
+2. AZ-Delivery ESP-32 Dev Kit C V4. Stable work.
 
 ## Supported devices
 
