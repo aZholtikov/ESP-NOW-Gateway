@@ -16,7 +16,7 @@ Gateway for data exchange between ESP-NOW devices and MQTT broker via WiFi.
 
 1. ESP-NOW mesh network based on the library [ZHNetwork](https://github.com/aZholtikov/ZHNetwork).
 2. Regardless of the status of connections to WiFi or MQTT the device perform ESP-NOW node function.
-3. For restart the device (without using the Web interface and only if MQTT connection established) send an "restart" command to the device's root topic (example - "homeassistant/gateway/70039F44BEF7").
+3. For restart the device (without using the Web interface and only if MQTT connection established) send an "restart" command to the device's root topic (example - "homeassistant/espnow_gateway/70039F44BEF7").
 
 ## Attention
 
@@ -26,12 +26,12 @@ Gateway for data exchange between ESP-NOW devices and MQTT broker via WiFi.
 
 ## Tested on
 
-1. NodeMCU 1.0 (ESP-12E Module). Unstable work.
-2. AZ-Delivery ESP-32 Dev Kit C V4. Stable work.
+1. NodeMCU 1.0 (ESP-12E Module). ESP-NOW + WiFi mode. Unstable work.
+2. AZ-Delivery ESP-32 Dev Kit C V4. ESP-NOW + WiFi mode. Stable work.
 
 ## Supported devices
 
-1. [RF - Gateway](https://github.com/aZholtikov/RF-Gateway) (coming soon)
+1. [RF Gateway](https://github.com/aZholtikov/RF-Gateway) (coming soon)
 2. [ESP-NOW Switch](https://github.com/aZholtikov/ESP-NOW-Switch)
 3. [ESP-NOW Light/Led Strip](https://github.com/aZholtikov/ESP-NOW-Light-Led-Strip)
 4. [ESP-NOW Window/Door Sensor](https://github.com/aZholtikov/ESP-NOW-Window-Door-Sensor) (coming soon)
