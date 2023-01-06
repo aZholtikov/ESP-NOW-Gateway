@@ -34,7 +34,7 @@ void setupWebServer(void);
 
 void connectToMqtt(void);
 
-const String firmware{"1.1"};
+const String firmware{"1.2"};
 
 String espnowNetName{"DEFAULT"};
 
@@ -165,12 +165,12 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
             deserializeJson(json, configData.message);
             uint8_t unit = json["unit"].as<uint8_t>();
-            String type = json["type"];
+            ha_component_type_t type = json["type"].as<ha_component_type_t>();
             StaticJsonDocument<2048> jsonConfig;
             jsonConfig["platform"] = "mqtt";
             jsonConfig["name"] = json["name"];
             jsonConfig["unique_id"] = myNet.macToString(sender) + "-" + unit;
-            jsonConfig["device_class"] = json["class"];
+            jsonConfig["device_class"] = getValueName(json["class"].as<ha_switch_device_class_t>());
             jsonConfig["state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
             jsonConfig["value_template"] = "{{ value_json.state }}";
             jsonConfig["command_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/set";
@@ -183,7 +183,7 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["retain"] = "true";
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttClient.publish((topicPrefix + "/" + type + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), 2, true, buffer);
+            mqttClient.publish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), 2, true, buffer);
         }
         if (incomingData.deviceType == ENDT_LED)
         {
@@ -192,7 +192,7 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
             deserializeJson(json, configData.message);
             uint8_t unit = json["unit"].as<uint8_t>();
-            String type = json["type"];
+            ha_component_type_t type = json["type"].as<ha_component_type_t>();
             esp_now_led_type_t ledClass = json["class"];
             StaticJsonDocument<2048> jsonConfig;
             jsonConfig["platform"] = "mqtt";
@@ -225,7 +225,34 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["retain"] = "true";
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttClient.publish((topicPrefix + "/" + type + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), 2, true, buffer);
+            mqttClient.publish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), 2, true, buffer);
+        }
+        if (incomingData.deviceType == ENDT_SENSOR)
+        {
+            esp_now_payload_data_t configData;
+            memcpy(&configData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
+            StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+            deserializeJson(json, configData.message);
+            uint8_t unit = json["unit"].as<uint8_t>();
+            ha_component_type_t type = json["type"].as<ha_component_type_t>();
+            StaticJsonDocument<2048> jsonConfig;
+            jsonConfig["platform"] = "mqtt";
+            jsonConfig["name"] = json["name"];
+            jsonConfig["unique_id"] = myNet.macToString(sender) + "-" + unit;
+            jsonConfig["state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
+            jsonConfig["json_attributes_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
+            jsonConfig["force_update"] = "true";
+            jsonConfig["qos"] = 2;
+            jsonConfig["retain"] = "true";
+            if (type == HACT_BINARY_SENSOR)
+            {
+                jsonConfig["device_class"] = getValueName(json["class"].as<ha_binary_sensor_device_class_t>());
+                jsonConfig["payload_on"] = json["payload_on"];
+                jsonConfig["payload_off"] = json["payload_off"];
+            }
+            char buffer[2048]{0};
+            serializeJsonPretty(jsonConfig, buffer);
+            mqttClient.publish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), 2, true, buffer);
         }
     }
     if (incomingData.payloadsType == ENPT_FORWARD)
