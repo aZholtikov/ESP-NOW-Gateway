@@ -34,7 +34,7 @@ void setupWebServer(void);
 
 void connectToMqtt(void);
 
-const String firmware{"1.2"};
+const String firmware{"1.21"};
 
 String espnowNetName{"DEFAULT"};
 
@@ -240,15 +240,19 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["name"] = json["name"];
             jsonConfig["unique_id"] = myNet.macToString(sender) + "-" + unit;
             jsonConfig["state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
+            jsonConfig["value_template"] = "{{ value_json.state }}";
             jsonConfig["json_attributes_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
             jsonConfig["force_update"] = "true";
             jsonConfig["qos"] = 2;
             jsonConfig["retain"] = "true";
             if (type == HACT_BINARY_SENSOR)
             {
-                jsonConfig["device_class"] = getValueName(json["class"].as<ha_binary_sensor_device_class_t>());
+                ha_binary_sensor_device_class_t deviceClass = json["class"].as<ha_binary_sensor_device_class_t>();
+                jsonConfig["device_class"] = getValueName(deviceClass);
                 jsonConfig["payload_on"] = json["payload_on"];
                 jsonConfig["payload_off"] = json["payload_off"];
+                if (deviceClass == HABSDC_BATTERY)
+                    jsonConfig["value_template"] = "{{ value_json.battery }}";
             }
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
