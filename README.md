@@ -35,7 +35,7 @@ Gateway for data exchange between ESP-NOW devices and MQTT broker via WiFi.
 2. [ESP-NOW Switch](https://github.com/aZholtikov/ESP-NOW-Switch)
 3. [ESP-NOW Light/Led Strip](https://github.com/aZholtikov/ESP-NOW-Light-Led-Strip)
 4. [ESP-NOW Window/Door Sensor](https://github.com/aZholtikov/ESP-NOW-Window-Door-Sensor)
-5. [ESP-NOW Water Leakage Sensor](https://github.com/aZholtikov/ESP-NOW-Water-Leakage-Sensor) (coming soon)
+5. [ESP-NOW Water Leakage Sensor](https://github.com/aZholtikov/ESP-NOW-Water-Leakage-Sensor)
 
 ## To Do
 
