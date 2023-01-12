@@ -34,11 +34,16 @@ void setupWebServer(void);
 
 void connectToMqtt(void);
 
-const String firmware{"1.21"};
+const String firmware{"1.22"};
 
 String espnowNetName{"DEFAULT"};
 
-String deviceName{"ESP-NOW gateway"};
+#if defined(ESP8266)
+String deviceName = "ESP-NOW gateway " + String(ESP.getChipId(), HEX);
+#endif
+#if defined(ESP32)
+String deviceName = "ESP-NOW gateway " + String(ESP.getEfuseMac(), HEX);
+#endif
 
 String ssid{"SSID"};
 String password{"PASSWORD"};
@@ -72,6 +77,7 @@ void setup()
     loadConfig();
 
     WiFi.onEvent(onWifiEvent);
+
 #if defined(ESP8266)
     WiFi.setSleepMode(WIFI_NONE_SLEEP);
 #endif
@@ -88,7 +94,13 @@ void setup()
     myNet.setOnBroadcastReceivingCallback(onEspnowMessage);
     myNet.setOnUnicastReceivingCallback(onEspnowMessage);
 
-    WiFi.softAP(("ESP-NOW Gateway " + myNet.getNodeMac()).c_str(), "12345678");
+#if defined(ESP8266)
+    WiFi.softAP(("ESP-NOW gateway " + String(ESP.getChipId(), HEX)).c_str(), "12345678");
+#endif
+#if defined(ESP32)
+    WiFi.softAP(("ESP-NOW gateway " + String(ESP.getEfuseMac(), HEX)).c_str(), "12345678");
+#endif
+
     uint8_t scan = WiFi.scanNetworks(false, false, 1);
     String name;
     int32_t rssi;
@@ -176,8 +188,8 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["command_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/set";
             jsonConfig["json_attributes_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
             jsonConfig["availability_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/status";
-            jsonConfig["payload_on"] = json["reverse"] == "true" ? "OFF" : "ON";
-            jsonConfig["payload_off"] = json["reverse"] == "true" ? "ON" : "OFF";
+            jsonConfig["payload_on"] = json["payload_on"];
+            jsonConfig["payload_off"] = json["payload_off"];
             jsonConfig["optimistic"] = "false";
             jsonConfig["qos"] = 2;
             jsonConfig["retain"] = "true";
@@ -218,8 +230,8 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             }
             jsonConfig["json_attributes_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
             jsonConfig["availability_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/status";
-            jsonConfig["payload_on"] = "ON";
-            jsonConfig["payload_off"] = "OFF";
+            jsonConfig["payload_on"] = json["payload_on"];
+            jsonConfig["payload_off"] = json["payload_off"];
             jsonConfig["optimistic"] = "false";
             jsonConfig["qos"] = 2;
             jsonConfig["retain"] = "true";
@@ -326,7 +338,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     if (String(topic) == topicPrefix + "/espnow_switch/" + mac + "/set" || String(topic) == topicPrefix + "/espnow_led/" + mac + "/set")
     {
         flag = true;
-        json["set"] = message == "ON" ? "ON" : "OFF";
+        json["set"] = message;
     }
     if (String(topic) == topicPrefix + "/espnow_led/" + mac + "/brightness")
     {
@@ -387,7 +399,7 @@ void sendAttributesMessage()
     uint32_t hours = mins / 60;
     uint32_t days = hours / 24;
     StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
-    json["Type"] = "ESP-NOW Gateway";
+    json["Type"] = "ESP-NOW gateway";
 #if defined(ESP8266)
     json["MCU"] = "ESP8266";
 #endif
@@ -480,7 +492,7 @@ void setupWebServer()
         ssdpDescription += xmlNode("friendlyName", deviceName);
         ssdpDescription += xmlNode("presentationURL", "/");
         ssdpDescription += xmlNode("serialNumber", "0000000" + String(random(1000)));
-        ssdpDescription += xmlNode("modelName", "ESP-NOW Gateway");
+        ssdpDescription += xmlNode("modelName", "ESP-NOW gateway");
         ssdpDescription += xmlNode("modelNumber", firmware);
         ssdpDescription += xmlNode("modelURL", "https://github.com/aZholtikov/ESP-NOW-Gateway");
         ssdpDescription += xmlNode("manufacturer", "Alexey Zholtikov");

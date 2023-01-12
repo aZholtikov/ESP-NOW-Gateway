@@ -31,20 +31,20 @@
 
         <p class="text">WiFi settings</p>
         <div class="wrapper">
-            <input id="ssid" value="{{ssid}}" placeholder="SSID" label title="WiFi network name" />
+            <input class="text-inp" id="ssid" value="{{ssid}}" placeholder="SSID" label title="WiFi network name" />
             <input id="password" value="{{password}}" onfocus="this.type='text'" type="password" placeholder="Password"
                 autocomplete="off" label title="WiFi password" />
         </div>
 
         <p class="text">MQTT settings</p>
         <div class="wrapper">
-            <input id="mqttHostName" value="{{mqttHostName}}" placeholder="URL or IP" label
+            <input class="text-inp" id="mqttHostName" value="{{mqttHostName}}" placeholder="URL or IP" label
                 title="MQTT server URL or IP" />
             <input id="mqttHostPort" value="{{mqttHostPort}}" placeholder="Port" label title="MQTT server port" />
         </div>
 
         <div class="wrapper">
-            <input id="mqttUserLogin" value="{{mqttUserLogin}}" placeholder="Login" label
+            <input class="text-inp" id="mqttUserLogin" value="{{mqttUserLogin}}" placeholder="Login" label
                 title="MQTT server user login" />
             <input id="mqttUserPassword" value="{{mqttUserPassword}}" onfocus="this.type='text'" type="password"
                 placeholder="Password" autocomplete="off" label title="MQTT server user password" />

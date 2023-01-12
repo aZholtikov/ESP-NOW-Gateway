@@ -1,3 +1,7 @@
+p{
+    margin: 0 0;
+}
+
 body {
     font-family: "Gill Sans", sans-serif;
     background: rgb(255, 255, 255);
@@ -21,6 +25,21 @@ h1 {
     font-weight: 600;
     flex-shrink: 0;
     margin-right: 10px;
+    margin-left: 10px;
+    margin: 10px 0;
+}
+
+.text-inp {
+    width: 48%;
+    min-height: 30px;
+    border-radius: 5px;
+    border: none;
+    margin-bottom: 10px;
+    padding: 0 10px;
+    color: rgb(0, 0, 0);
+    background: #a3e0f1;
+    transition: .5s;
+    margin-left: 0;
 }
 
 .wrapper {
@@ -39,6 +58,7 @@ input {
     color: rgb(0, 0, 0);
     background: #a3e0f1;
     transition: .5s;
+    margin-left: 10px;
 }
 
 input:hover {
@@ -51,6 +71,8 @@ input:hover {
     background: rgb(65, 125, 238);
     color: white;
     transition: .5s;
+    margin-left: 0;
+    margin-top: 8px;
 }
 
 .btn:hover {
@@ -63,6 +85,10 @@ input:hover {
 #espnowNetName,
 #topicPrefix {
     width: 100%;
+}
+
+#espnowNetName {
+    margin-bottom: 10px;
 }
 
 .wrapper.wrapper--end {
