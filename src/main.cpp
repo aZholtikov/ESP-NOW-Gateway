@@ -34,7 +34,7 @@ void setupWebServer(void);
 
 void connectToMqtt(void);
 
-const String firmware{"1.23"};
+const String firmware{"1.24"};
 
 String espnowNetName{"DEFAULT"};
 
@@ -90,6 +90,7 @@ void setup()
     WiFi.setAutoReconnect(true);
 
     myNet.begin(espnowNetName.c_str(), true);
+    // myNet.setCryptKey("VERY_LONG_CRYPT_KEY"); // If encryption is used, the key must be set same of all another ESP-NOW devices in network.
 
     myNet.setOnBroadcastReceivingCallback(onEspnowMessage);
     myNet.setOnUnicastReceivingCallback(onEspnowMessage);
