@@ -34,7 +34,7 @@ void setupWebServer(void);
 
 void connectToMqtt(void);
 
-const String firmware{"1.24"};
+const String firmware{"1.25"};
 
 String espnowNetName{"DEFAULT"};
 
@@ -258,6 +258,8 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["force_update"] = "true";
             jsonConfig["qos"] = 2;
             jsonConfig["retain"] = "true";
+            if (type == HACT_SENSOR)
+                jsonConfig["device_class"] = getValueName(json["class"].as<ha_sensor_device_class_t>());
             if (type == HACT_BINARY_SENSOR)
             {
                 jsonConfig["device_class"] = getValueName(json["class"].as<ha_binary_sensor_device_class_t>());
