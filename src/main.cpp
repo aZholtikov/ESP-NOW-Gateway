@@ -1,7 +1,8 @@
 #include "ArduinoJson.h"
 #include "ArduinoOTA.h"
-#include "ESPAsyncWebServer.h"
+#include "ESPAsyncWebServer.h" // https://github.com/aZholtikov/Async-Web-Server
 #include "AsyncMQTTClient.h"
+#include "LittleFS.h"
 #include "Ticker.h"
 #include "ZHNetwork.h"
 #include "ZHConfig.h"
@@ -9,7 +10,6 @@
 #include "ESP8266SSDP.h"
 #endif
 #if defined(ESP32)
-#include "SPIFFS.h"
 #include "ESP32SSDP.h"
 #endif
 
@@ -34,7 +34,7 @@ void setupWebServer(void);
 
 void connectToMqtt(void);
 
-const String firmware{"1.25"};
+const String firmware{"1.26"};
 
 String espnowNetName{"DEFAULT"};
 
@@ -72,7 +72,7 @@ void attributesMessageTimerCallback(void);
 
 void setup()
 {
-    SPIFFS.begin();
+    LittleFS.begin();
 
     loadConfig();
 
@@ -433,9 +433,9 @@ String getValue(String data, char separator, uint8_t index)
 
 void loadConfig()
 {
-    if (!SPIFFS.exists("/config.json"))
+    if (!LittleFS.exists("/config.json"))
         saveConfig();
-    File file = SPIFFS.open("/config.json", "r");
+    File file = LittleFS.open("/config.json", "r");
     String jsonFile = file.readString();
     StaticJsonDocument<1024> json;
     deserializeJson(json, jsonFile);
@@ -465,7 +465,7 @@ void saveConfig()
     json["mqttUserPassword"] = mqttUserPassword;
     json["topicPrefix"] = topicPrefix;
     json["system"] = "empty";
-    File file = SPIFFS.open("/config.json", "w");
+    File file = LittleFS.open("/config.json", "w");
     serializeJsonPretty(json, file);
     file.close();
 }
@@ -505,7 +505,7 @@ void setupWebServer()
         request->send(200, "text/xml", ssdpSend); });
 
     webServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-                 { request->send(SPIFFS, "/index.htm"); });
+                 { request->send(LittleFS, "/index.htm"); });
 
     webServer.on("/setting", HTTP_GET, [](AsyncWebServerRequest *request)
                  {
@@ -528,8 +528,8 @@ void setupWebServer()
 
     webServer.onNotFound([](AsyncWebServerRequest *request)
                          { 
-        if (SPIFFS.exists(request->url()))
-        request->send(SPIFFS, request->url());
+        if (LittleFS.exists(request->url()))
+        request->send(LittleFS, request->url());
         else
         {
         request->send(404, "text/plain", "File Not Found");
