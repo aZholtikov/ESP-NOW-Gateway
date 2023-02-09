@@ -29,6 +29,13 @@ h1 {
     margin: 10px 0;
 }
 
+.text-select {
+    width: 35%;
+    font-weight: 600;
+    flex-shrink: 0;
+    margin-right: 10px;
+}
+
 .text-inp {
     width: 48%;
     min-height: 30px;
@@ -61,7 +68,24 @@ input {
     margin-left: 10px;
 }
 
+select {
+    width: 140px;
+    min-height: 30px;
+    border-radius: 5px;
+    border: none;
+    margin-bottom: 10px;
+    padding: 0 10px;
+    color: rgb(0, 0, 0);
+    background: #a3e0f1;
+    transition: .5s;
+}
+
 input:hover {
+    background: white;
+    cursor: pointer;
+}
+
+select:hover {
     background: white;
     cursor: pointer;
 }
@@ -88,7 +112,7 @@ input:hover {
 }
 
 #espnowNetName {
-    margin-bottom: 10px;
+    margin-bottom: 15px;
 }
 
 .wrapper.wrapper--end {

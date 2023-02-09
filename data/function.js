@@ -29,11 +29,18 @@ function loadBlock() {
     }
     document.getElementsByTagName('body')[0].innerHTML = newString;
     setFirmvareValue('version', 'firmware');
+    setGpioValue('workModeSelect', 'workMode');
     handleServerResponse();
 }
 
 function getValue(id) {
     var value = document.getElementById(id).value;
+    return value;
+}
+
+function getSelectValue(id) {
+    var select = document.getElementById(id);
+    var value = select.value;
     return value;
 }
 
@@ -49,7 +56,10 @@ function saveSetting(submit) {
         + "&login=" + getValue('mqttUserLogin') + "&pass=" + encodeURIComponent(getValue('mqttUserPassword'))
         + "&prefix=" + getValue('topicPrefix')
         + "&name=" + getValue('deviceName')
-        + "&net=" + getValue('espnowNetName');
+        + "&net=" + getValue('espnowNetName')
+        + "&mode=" + getSelectValue('workModeSelect')
+        + "&ntp=" + getValue('ntpHostName')
+        + "&zone=" + getValue('gmtOffset');
     sendRequest(submit, server);
     alert("Please restart device for changes apply.");
 }
@@ -61,4 +71,9 @@ function restart(submit) {
 
 function setFirmvareValue(id, value) {
     document.getElementById(id).innerHTML = document.getElementById(value).value;
+}
+
+function setGpioValue(id, value) {
+    var select = document.getElementById(id);
+    select.value = document.getElementById(value).value;
 }

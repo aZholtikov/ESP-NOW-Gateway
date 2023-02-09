@@ -1,9 +1,11 @@
 #include "ArduinoJson.h"
 #include "ArduinoOTA.h"
 #include "ESPAsyncWebServer.h" // https://github.com/aZholtikov/Async-Web-Server
-#include "AsyncMQTTClient.h"
+#include "Ethernet.h"          // https://github.com/arduino-libraries/Ethernet
+#include "PubSubClient.h"
 #include "LittleFS.h"
 #include "Ticker.h"
+#include "NTPClient.h"
 #include "ZHNetwork.h"
 #include "ZHConfig.h"
 #if defined(ESP8266)
@@ -13,16 +15,20 @@
 #include "ESP32SSDP.h"
 #endif
 
-void onWifiEvent(WiFiEvent_t event);
+typedef enum : uint8_t
+{
+    ESP_NOW,
+    ESP_NOW_WIFI,
+    ESP_NOW_LAN
+} work_mode_t;
 
 void onEspnowMessage(const char *data, const uint8_t *sender);
 
-void onMqttConnect(bool sessionPresent);
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason);
-void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total);
+void onMqttMessage(char *topic, byte *payload, unsigned int length);
 
 void sendKeepAliveMessage(void);
 void sendAttributesMessage(void);
+void sendConfigMessage(void);
 
 String getValue(String data, char separator, uint8_t index);
 
@@ -32,11 +38,15 @@ void saveConfig(void);
 String xmlNode(String tags, String data);
 void setupWebServer(void);
 
-void connectToMqtt(void);
+void checkMqttAvailability(void);
 
-const String firmware{"1.26"};
+void mqttPublish(const char *topic, const char *payload, bool retained);
+
+const String firmware{"1.3"};
 
 String espnowNetName{"DEFAULT"};
+
+uint8_t workMode{ESP_NOW};
 
 #if defined(ESP8266)
 String deviceName = "ESP-NOW gateway " + String(ESP.getChipId(), HEX);
@@ -53,47 +63,79 @@ uint16_t mqttHostPort{1883};
 String mqttUserLogin{""};
 String mqttUserPassword{""};
 String topicPrefix{"homeassistant"};
+const char *mqttUserID{"ESP32"};
+
+String ntpHostName{"NTP"};
+uint16_t gmtOffset{10800};
+
+uint8_t w5500Mac[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}; // Change it if necessary.
 
 ZHNetwork myNet;
 AsyncWebServer webServer(80);
-AsyncMqttClient mqttClient;
 
-Ticker mqttReconnectTimer;
-bool mqttReconnectTimerSemaphore{false};
-void mqttReconnectTimerCallback(void);
+EthernetClient ethClient;
+WiFiClient wifiClient;
+
+PubSubClient mqttEthClient(ethClient);
+PubSubClient mqttWifiClient(wifiClient);
+
+WiFiUDP udpWiFiClient;
+EthernetUDP udpEthClient;
+
+NTPClient ntpWiFiClient(udpWiFiClient, ntpHostName.c_str(), gmtOffset);
+NTPClient ntpEthClient(udpEthClient, ntpHostName.c_str(), gmtOffset);
+
+Ticker mqttAvailabilityCheckTimer;
+bool mqttAvailabilityCheckTimerSemaphore{true};
+bool isMqttAvailable{false};
+void mqttAvailabilityCheckTimerCallback(void);
 
 Ticker keepAliveMessageTimer;
 bool keepAliveMessageTimerSemaphore{true};
 void keepAliveMessageTimerCallback(void);
 
 Ticker attributesMessageTimer;
-bool attributesMessageTimerSemaphore{false};
+bool attributesMessageTimerSemaphore{true};
 void attributesMessageTimerCallback(void);
 
 void setup()
 {
+#if defined(ESP8266)
     LittleFS.begin();
+#endif
+#if defined(ESP32)
+    LittleFS.begin(true);
+#endif
 
     loadConfig();
 
-    WiFi.onEvent(onWifiEvent);
+    if (workMode == ESP_NOW_LAN)
+    {
+        Ethernet.init(5);
+        Ethernet.begin(w5500Mac);
+    }
 
+    if (workMode == ESP_NOW_WIFI)
+    {
 #if defined(ESP8266)
-    WiFi.setSleepMode(WIFI_NONE_SLEEP);
+        WiFi.setSleepMode(WIFI_NONE_SLEEP);
 #endif
 #if defined(ESP32)
-    WiFi.setSleep(WIFI_PS_NONE);
+        WiFi.setSleep(WIFI_PS_NONE);
 #endif
-
-    WiFi.persistent(false);
-    WiFi.setAutoConnect(false);
-    WiFi.setAutoReconnect(true);
+        WiFi.persistent(false);
+        WiFi.setAutoConnect(false);
+        WiFi.setAutoReconnect(true);
+    }
 
     myNet.begin(espnowNetName.c_str(), true);
-    // myNet.setCryptKey("VERY_LONG_CRYPT_KEY"); // If encryption is used, the key must be set same of all another ESP-NOW devices in network.
 
-    myNet.setOnBroadcastReceivingCallback(onEspnowMessage);
-    myNet.setOnUnicastReceivingCallback(onEspnowMessage);
+    if (workMode)
+    {
+        // myNet.setCryptKey("VERY_LONG_CRYPT_KEY"); // If encryption is used, the key must be set same of all another ESP-NOW devices in network.
+        myNet.setOnBroadcastReceivingCallback(onEspnowMessage);
+        myNet.setOnUnicastReceivingCallback(onEspnowMessage);
+    }
 
 #if defined(ESP8266)
     WiFi.softAP(("ESP-NOW gateway " + String(ESP.getChipId(), HEX)).c_str(), "12345678");
@@ -102,73 +144,81 @@ void setup()
     WiFi.softAP(("ESP-NOW gateway " + String(ESP.getEfuseMac(), HEX)).c_str(), "12345678");
 #endif
 
-    uint8_t scan = WiFi.scanNetworks(false, false, 1);
-    String name;
-    int32_t rssi;
-    uint8_t encryption;
-    uint8_t *bssid;
-    int32_t channel;
-    bool hidden;
-    for (int8_t i = 0; i < scan; i++)
+    if (workMode == ESP_NOW_WIFI)
     {
+        uint8_t scan = WiFi.scanNetworks(false, false);
+        String name;
+        int32_t rssi;
+        uint8_t encryption;
+        uint8_t *bssid;
+        int32_t channel;
+        bool hidden;
+        for (int8_t i = 0; i < scan; i++)
+        {
 #if defined(ESP8266)
-        WiFi.getNetworkInfo(i, name, encryption, rssi, bssid, channel, hidden);
+            WiFi.getNetworkInfo(i, name, encryption, rssi, bssid, channel, hidden);
 #endif
 #if defined(ESP32)
-        WiFi.getNetworkInfo(i, name, encryption, rssi, bssid, channel);
+            WiFi.getNetworkInfo(i, name, encryption, rssi, bssid, channel);
 #endif
-        if (name == ssid)
-            WiFi.begin(ssid.c_str(), password.c_str());
+            if (name == ssid)
+                WiFi.begin(ssid.c_str(), password.c_str());
+        }
     }
 
-    mqttClient.onConnect(onMqttConnect);
-    mqttClient.onDisconnect(onMqttDisconnect);
-    mqttClient.onMessage(onMqttMessage);
-    mqttClient.setServer(mqttHostName.c_str(), mqttHostPort);
-    mqttClient.setCredentials(mqttUserLogin.c_str(), mqttUserPassword.c_str());
+    if (workMode == ESP_NOW_WIFI)
+    {
+        ntpWiFiClient.begin();
+        mqttWifiClient.setBufferSize(2048);
+        mqttWifiClient.setServer(mqttHostName.c_str(), mqttHostPort);
+        mqttWifiClient.setCallback(onMqttMessage);
+    }
+
+    if (workMode == ESP_NOW_LAN)
+    {
+        ntpEthClient.begin();
+        mqttEthClient.setBufferSize(2048);
+        mqttEthClient.setServer(mqttHostName.c_str(), mqttHostPort);
+        mqttEthClient.setCallback(onMqttMessage);
+    }
 
     setupWebServer();
 
     ArduinoOTA.begin();
 
     keepAliveMessageTimer.attach(10, keepAliveMessageTimerCallback);
+    mqttAvailabilityCheckTimer.attach(5, mqttAvailabilityCheckTimerCallback);
+    attributesMessageTimer.attach(60, attributesMessageTimerCallback);
 }
 
 void loop()
 {
-    if (mqttReconnectTimerSemaphore)
-        connectToMqtt();
+    if (mqttAvailabilityCheckTimerSemaphore)
+        checkMqttAvailability();
     if (keepAliveMessageTimerSemaphore)
         sendKeepAliveMessage();
     if (attributesMessageTimerSemaphore)
         sendAttributesMessage();
+    if (workMode == ESP_NOW_WIFI)
+        mqttWifiClient.loop();
+    if (workMode == ESP_NOW_LAN)
+        mqttEthClient.loop();
     myNet.maintenance();
     ArduinoOTA.handle();
 }
 
-void onWifiEvent(WiFiEvent_t event)
-{
-#if defined(ESP8266)
-    if (event == WIFI_EVENT_STAMODE_GOT_IP)
-#endif
-#if defined(ESP32)
-        if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP)
-#endif
-            mqttClient.connect();
-}
-
 void onEspnowMessage(const char *data, const uint8_t *sender)
 {
-    if (!mqttClient.connected())
+    if (!isMqttAvailable)
         return;
     esp_now_payload_data_t incomingData;
     memcpy(&incomingData, data, sizeof(esp_now_payload_data_t));
     if (incomingData.payloadsType == ENPT_ATTRIBUTES)
-        mqttClient.publish((topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), 2, true, incomingData.message);
+        mqttPublish((topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), incomingData.message, true);
     if (incomingData.payloadsType == ENPT_KEEP_ALIVE)
-        mqttClient.publish((topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), 2, true, "online");
+        mqttPublish((topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), "online", true);
     if (incomingData.payloadsType == ENPT_STATE)
-        mqttClient.publish((topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), 2, true, incomingData.message);
+        mqttPublish((topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), incomingData.message, true);
     if (incomingData.payloadsType == ENPT_CONFIG)
     {
         if (incomingData.deviceType == ENDT_SWITCH)
@@ -192,11 +242,10 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["payload_on"] = json["payload_on"];
             jsonConfig["payload_off"] = json["payload_off"];
             jsonConfig["optimistic"] = "false";
-            jsonConfig["qos"] = 2;
             jsonConfig["retain"] = "true";
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttClient.publish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), 2, true, buffer);
+            mqttPublish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
         }
         if (incomingData.deviceType == ENDT_LED)
         {
@@ -234,11 +283,10 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["payload_on"] = json["payload_on"];
             jsonConfig["payload_off"] = json["payload_off"];
             jsonConfig["optimistic"] = "false";
-            jsonConfig["qos"] = 2;
             jsonConfig["retain"] = "true";
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttClient.publish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), 2, true, buffer);
+            mqttPublish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
         }
         if (incomingData.deviceType == ENDT_SENSOR)
         {
@@ -256,7 +304,6 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["value_template"] = "{{ value_json." + json["template"].as<String>() + " }}";
             jsonConfig["json_attributes_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
             jsonConfig["force_update"] = "true";
-            jsonConfig["qos"] = 2;
             jsonConfig["retain"] = "true";
             if (type == HACT_SENSOR)
                 jsonConfig["device_class"] = getValueName(json["class"].as<ha_sensor_device_class_t>());
@@ -268,7 +315,7 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             }
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttClient.publish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), 2, true, buffer);
+            mqttPublish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
         }
     }
     if (incomingData.payloadsType == ENPT_FORWARD)
@@ -277,50 +324,16 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
         memcpy(&forwardData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
         StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
         deserializeJson(json, forwardData.message);
-        mqttClient.publish((topicPrefix + "/rf_sensor/" + getValueName(json["type"].as<rf_sensor_type_t>()) + "/" + json["id"].as<uint16_t>()).c_str(), 2, false, incomingData.message);
+        mqttPublish((topicPrefix + "/rf_sensor/" + getValueName(json["type"].as<rf_sensor_type_t>()) + "/" + json["id"].as<uint16_t>()).c_str(), incomingData.message, false);
     }
 }
 
-void onMqttConnect(bool sessionPresent)
-{
-    mqttClient.subscribe((topicPrefix + "/espnow_gateway/#").c_str(), 2);
-    mqttClient.subscribe((topicPrefix + "/espnow_switch/#").c_str(), 2);
-    mqttClient.subscribe((topicPrefix + "/espnow_led/#").c_str(), 2);
-
-    StaticJsonDocument<1024> json;
-    json["platform"] = "mqtt";
-    json["name"] = deviceName;
-    json["unique_id"] = myNet.getNodeMac() + "-1";
-    json["device_class"] = "connectivity";
-    json["state_topic"] = topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/status";
-    json["json_attributes_topic"] = topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/attributes";
-    json["payload_on"] = "online";
-    json["expire_after"] = 30;
-    json["force_update"] = "true";
-    json["qos"] = 2;
-    json["retain"] = "true";
-    char buffer[1024]{0};
-    serializeJsonPretty(json, buffer);
-    mqttClient.publish((topicPrefix + "/binary_sensor/" + myNet.getNodeMac() + "-1" + "/config").c_str(), 2, true, buffer);
-
-    sendKeepAliveMessage();
-    sendAttributesMessage();
-    attributesMessageTimer.attach(60, attributesMessageTimerCallback);
-}
-
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason)
-{
-    mqttReconnectTimer.once(5, mqttReconnectTimerCallback);
-    sendKeepAliveMessage();
-    attributesMessageTimer.detach();
-}
-
-void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total)
+void onMqttMessage(char *topic, byte *payload, unsigned int length)
 {
     String mac = getValue(String(topic).substring(0, String(topic).length()), '/', 2);
     String message;
     bool flag{false};
-    for (uint16_t i = 0; i < len; ++i)
+    for (uint16_t i = 0; i < length; ++i)
     {
         message += (char)payload[i];
     }
@@ -329,8 +342,8 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
     if (message == "update" || message == "restart")
     {
-        mqttClient.publish(topic, 2, true, "");
-        mqttClient.publish((String(topic) + "/status").c_str(), 2, true, "offline");
+        mqttPublish(topic, "", true);
+        mqttPublish((String(topic) + "/status").c_str(), "offline", true);
         if (mac == myNet.getNodeMac() && message == "restart")
             ESP.restart();
         flag = true;
@@ -375,14 +388,30 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 void sendKeepAliveMessage()
 {
     keepAliveMessageTimerSemaphore = false;
-    if (mqttClient.connected())
-        mqttClient.publish((topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/status").c_str(), 2, true, "online");
+    if (isMqttAvailable)
+        mqttPublish((topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/status").c_str(), "online", true);
     esp_now_payload_data_t outgoingData;
     outgoingData.deviceType = ENDT_GATEWAY;
     outgoingData.payloadsType = ENPT_KEEP_ALIVE;
     StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
-    json["MQTT"] = mqttClient.connected() ? "online" : "offline";
+    json["MQTT"] = isMqttAvailable ? "online" : "offline";
     json["frequency"] = 10; // For compatibility with the previous version. Will be removed in future releases.
+    if (workMode == ESP_NOW_WIFI)
+    {
+        ntpWiFiClient.update();
+        uint64_t epochTime = ntpWiFiClient.getEpochTime();
+        struct tm *time = gmtime((time_t *)&epochTime);
+        json["time"] = ntpWiFiClient.getFormattedTime();
+        json["date"] = String(time->tm_mday) + "." + String(time->tm_mon + 1) + "." + String(time->tm_year + 1900);
+    }
+    if (workMode == ESP_NOW_LAN)
+    {
+        ntpEthClient.update();
+        uint64_t epochTime = ntpEthClient.getEpochTime();
+        struct tm *time = gmtime((time_t *)&epochTime);
+        json["time"] = ntpEthClient.getFormattedTime();
+        json["date"] = String(time->tm_mday) + "." + String(time->tm_mon + 1) + "." + String(time->tm_year + 1900);
+    }
     char buffer[sizeof(esp_now_payload_data_t::message)]{0};
     serializeJsonPretty(json, buffer);
     memcpy(&outgoingData.message, &buffer, sizeof(esp_now_payload_data_t::message));
@@ -393,6 +422,8 @@ void sendKeepAliveMessage()
 
 void sendAttributesMessage()
 {
+    if (!isMqttAvailable)
+        return;
     attributesMessageTimerSemaphore = false;
     uint32_t secs = millis() / 1000;
     uint32_t mins = secs / 60;
@@ -409,11 +440,32 @@ void sendAttributesMessage()
     json["MAC"] = myNet.getNodeMac();
     json["Firmware"] = firmware;
     json["Library"] = myNet.getFirmwareVersion();
-    json["IP"] = WiFi.localIP().toString();
+    if (workMode == ESP_NOW_WIFI)
+        json["IP"] = WiFi.localIP().toString();
+    if (workMode == ESP_NOW_LAN)
+        json["IP"] = Ethernet.localIP().toString();
     json["Uptime"] = "Days:" + String(days) + " Hours:" + String(hours - (days * 24)) + " Mins:" + String(mins - (hours * 60));
     char buffer[sizeof(esp_now_payload_data_t::message)]{0};
     serializeJsonPretty(json, buffer);
-    mqttClient.publish((topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/attributes").c_str(), 2, true, buffer);
+    mqttPublish((topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/attributes").c_str(), buffer, true);
+}
+
+void sendConfigMessage()
+{
+    StaticJsonDocument<1024> json;
+    json["platform"] = "mqtt";
+    json["name"] = deviceName;
+    json["unique_id"] = myNet.getNodeMac() + "-1";
+    json["device_class"] = "connectivity";
+    json["state_topic"] = topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/status";
+    json["json_attributes_topic"] = topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/attributes";
+    json["payload_on"] = "online";
+    json["expire_after"] = 30;
+    json["force_update"] = "true";
+    json["retain"] = "true";
+    char buffer[1024]{0};
+    serializeJsonPretty(json, buffer);
+    mqttPublish((topicPrefix + "/binary_sensor/" + myNet.getNodeMac() + "-1" + "/config").c_str(), buffer, true);
 }
 
 String getValue(String data, char separator, uint8_t index)
@@ -448,6 +500,9 @@ void loadConfig()
     mqttUserLogin = json["mqttUserLogin"].as<String>();
     mqttUserPassword = json["mqttUserPassword"].as<String>();
     topicPrefix = json["topicPrefix"].as<String>();
+    workMode = json["workMode"];
+    ntpHostName = json["ntpHostName"].as<String>();
+    gmtOffset = json["gmtOffset"];
     file.close();
 }
 
@@ -464,6 +519,9 @@ void saveConfig()
     json["mqttUserLogin"] = mqttUserLogin;
     json["mqttUserPassword"] = mqttUserPassword;
     json["topicPrefix"] = topicPrefix;
+    json["workMode"] = workMode;
+    json["ntpHostName"] = ntpHostName;
+    json["gmtOffset"] = gmtOffset;
     json["system"] = "empty";
     File file = LittleFS.open("/config.json", "w");
     serializeJsonPretty(json, file);
@@ -518,6 +576,9 @@ void setupWebServer()
         topicPrefix = request->getParam("prefix")->value();
         deviceName = request->getParam("name")->value();
         espnowNetName = request->getParam("net")->value();
+        workMode = request->getParam("mode")->value().toInt();
+        ntpHostName = request->getParam("ntp")->value();
+        gmtOffset = request->getParam("zone")->value().toInt();
         request->send(200);
         saveConfig(); });
 
@@ -535,19 +596,62 @@ void setupWebServer()
         request->send(404, "text/plain", "File Not Found");
         } });
 
-    SSDP.begin();
+    if (workMode == ESP_NOW_WIFI)
+        SSDP.begin();
+
     webServer.begin();
 }
 
-void connectToMqtt()
+void checkMqttAvailability()
 {
-    mqttReconnectTimerSemaphore = false;
-    mqttClient.connect();
+    mqttAvailabilityCheckTimerSemaphore = false;
+
+    if (workMode == ESP_NOW_WIFI)
+        if (WiFi.isConnected())
+            if (!mqttWifiClient.connected())
+            {
+                isMqttAvailable = false;
+                if (mqttWifiClient.connect(mqttUserID, mqttUserLogin.c_str(), mqttUserPassword.c_str()))
+                {
+                    isMqttAvailable = true;
+
+                    mqttWifiClient.subscribe((topicPrefix + "/espnow_gateway/#").c_str());
+                    mqttWifiClient.subscribe((topicPrefix + "/espnow_switch/#").c_str());
+                    mqttWifiClient.subscribe((topicPrefix + "/espnow_led/#").c_str());
+
+                    sendConfigMessage();
+                }
+            }
+
+    if (workMode == ESP_NOW_LAN)
+        if (Ethernet.linkStatus() == LinkON)
+            if (!mqttEthClient.connected())
+            {
+                isMqttAvailable = false;
+                if (mqttEthClient.connect(mqttUserID, mqttUserLogin.c_str(), mqttUserPassword.c_str()))
+                {
+                    isMqttAvailable = true;
+
+                    mqttEthClient.subscribe((topicPrefix + "/espnow_gateway/#").c_str());
+                    mqttEthClient.subscribe((topicPrefix + "/espnow_switch/#").c_str());
+                    mqttEthClient.subscribe((topicPrefix + "/espnow_led/#").c_str());
+
+                    sendConfigMessage();
+                }
+            }
 }
 
-void mqttReconnectTimerCallback()
+void mqttPublish(const char *topic, const char *payload, bool retained)
 {
-    mqttReconnectTimerSemaphore = true;
+    if (workMode == ESP_NOW_WIFI)
+        mqttWifiClient.publish(topic, payload, retained);
+    if (workMode == ESP_NOW_LAN)
+        mqttEthClient.publish(topic, payload, retained);
+}
+
+void mqttAvailabilityCheckTimerCallback()
+{
+    mqttAvailabilityCheckTimerSemaphore = true;
 }
 
 void keepAliveMessageTimerCallback()
