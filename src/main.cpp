@@ -42,7 +42,7 @@ void checkMqttAvailability(void);
 
 void mqttPublish(const char *topic, const char *payload, bool retained);
 
-const String firmware{"1.4"};
+const String firmware{"1.41"};
 
 String espnowNetName{"DEFAULT"};
 
