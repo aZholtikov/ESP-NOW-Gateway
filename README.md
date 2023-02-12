@@ -9,9 +9,10 @@ Gateway for data exchange between ESP-NOW devices and MQTT broker via WiFi/LAN.
 3. Periodically transmission of system information to the MQTT broker (every 60 seconds), availability status to the ESP-NOW network and to the MQTT broker (every 10 seconds) and current date and time to the ESP-NOW network (every 10 seconds).
 4. Automatically adds gateway configuration to Home Assistan via MQTT discovery as a binary_sensor.
 5. Automatically adds supported ESP-NOW devices configurations to Home Assistan via MQTT discovery.
-6. Possibility firmware update over OTA (at ESP_NOW_LAN mode via access point only).
-7. Web interface for settings (at ESP_NOW_LAN mode via access point only).
-8. 3 operating modes:
+6. Automatically adds supported nRF24 devices configurations to Home Assistan via MQTT discovery.
+7. Possibility firmware update over OTA (at ESP_NOW_LAN mode via access point only).
+8. Web interface for settings (at ESP_NOW_LAN mode via access point only).
+9. 3 operating modes:
 
 ```text
 ESP_NOW       ESP-NOW node only. Default mode after flashing.
