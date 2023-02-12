@@ -47,7 +47,7 @@ ESP32   (GPIO05 - CS, GPIO18 - SCK, GPIO19 - MISO, GPIO23 - MOSI).
 
 ## Supported devices
 
-1. [RF Gateway](https://github.com/aZholtikov/RF-Gateway) (coming soon)
+1. [RF Gateway](https://github.com/aZholtikov/RF-Gateway)
 2. [ESP-NOW Switch](https://github.com/aZholtikov/ESP-NOW-Switch)
 3. [ESP-NOW Light/Led Strip](https://github.com/aZholtikov/ESP-NOW-Light-Led-Strip)
 4. [ESP-NOW Window/Door Sensor](https://github.com/aZholtikov/ESP-NOW-Window-Door-Sensor)
@@ -57,8 +57,8 @@ ESP32   (GPIO05 - CS, GPIO18 - SCK, GPIO19 - MISO, GPIO23 - MOSI).
 
 - [X] Automatically add ESP-NOW devices configurations to Home Assistan via MQTT discovery.
 - [X] LAN connection support.
-- [ ] nRF24 device support (in current time uses "RF Gateway").
-- [ ] BLE device support (for ESP32).
-- [ ] LoRa device support.
+- [X] nRF24 device support (via [RF Gateway](https://github.com/aZholtikov/RF-Gateway)).
+- [ ] BLE device support (via BLE Gateway).
+- [ ] LoRa device support (via LoRa Gateway).
 
 Any feedback via [e-mail](mailto:github@zh.com.ru) would be appreciated. Or... [Buy me a coffee](https://paypal.me/aZholtikov).

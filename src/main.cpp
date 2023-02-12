@@ -42,7 +42,7 @@ void checkMqttAvailability(void);
 
 void mqttPublish(const char *topic, const char *payload, bool retained);
 
-const String firmware{"1.3"};
+const String firmware{"1.4"};
 
 String espnowNetName{"DEFAULT"};
 
@@ -228,7 +228,6 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
             deserializeJson(json, configData.message);
             uint8_t unit = json["unit"].as<uint8_t>();
-            ha_component_type_t type = json["type"].as<ha_component_type_t>();
             StaticJsonDocument<2048> jsonConfig;
             jsonConfig["platform"] = "mqtt";
             jsonConfig["name"] = json["name"];
@@ -245,7 +244,7 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["retain"] = "true";
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttPublish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
+            mqttPublish((topicPrefix + "/" + getValueName(json["type"].as<ha_component_type_t>()) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
         }
         if (incomingData.deviceType == ENDT_LED)
         {
@@ -254,7 +253,6 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
             deserializeJson(json, configData.message);
             uint8_t unit = json["unit"].as<uint8_t>();
-            ha_component_type_t type = json["type"].as<ha_component_type_t>();
             esp_now_led_type_t ledClass = json["class"];
             StaticJsonDocument<2048> jsonConfig;
             jsonConfig["platform"] = "mqtt";
@@ -286,7 +284,7 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["retain"] = "true";
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttPublish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
+            mqttPublish((topicPrefix + "/" + getValueName(json["type"].as<ha_component_type_t>()) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
         }
         if (incomingData.deviceType == ENDT_SENSOR)
         {
@@ -309,13 +307,77 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
                 jsonConfig["device_class"] = getValueName(json["class"].as<ha_sensor_device_class_t>());
             if (type == HACT_BINARY_SENSOR)
             {
-                jsonConfig["device_class"] = getValueName(json["class"].as<ha_binary_sensor_device_class_t>());
+                ha_binary_sensor_device_class_t deviceClass = json["class"].as<ha_binary_sensor_device_class_t>();
+                if (deviceClass == HABSDC_BATTERY || deviceClass == HABSDC_WINDOW || deviceClass == HABSDC_DOOR)
+                    jsonConfig["payload_off"] = json["payload_off"];
+                if (deviceClass == HABSDC_CONNECTIVITY)
+                    jsonConfig["expire_after"] = json["expire_after"];
+                jsonConfig["device_class"] = getValueName(deviceClass);
                 jsonConfig["payload_on"] = json["payload_on"];
-                jsonConfig["payload_off"] = json["payload_off"];
             }
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
             mqttPublish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
+        }
+        if (incomingData.deviceType == ENDT_RF_SENSOR)
+        {
+            esp_now_payload_data_t configData;
+            memcpy(&configData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
+            StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+            deserializeJson(json, configData.message);
+            uint8_t unit = json["u"].as<uint8_t>();
+            ha_component_type_t type = json["t"].as<ha_component_type_t>();
+            rf_sensor_type_t rf = json["r"].as<rf_sensor_type_t>();
+            uint16_t id = json["i"].as<uint16_t>();
+            String tmp = json["v"].as<String>();
+            StaticJsonDocument<2048> jsonConfig;
+            jsonConfig["platform"] = "mqtt";
+            jsonConfig["name"] = getValueName(rf) + " " + id + " " + tmp;
+            jsonConfig["unique_id"] = String(id) + "-" + unit;
+            jsonConfig["state_topic"] = topicPrefix + "/rf_sensor/" + getValueName(rf) + "/" + id + "/state";
+            jsonConfig["value_template"] = "{{ value_json." + tmp + " }}";
+            if (type == HACT_SENSOR)
+            {
+                jsonConfig["device_class"] = getValueName(json["h"].as<ha_sensor_device_class_t>());
+                jsonConfig["unit_of_measurement"] = json["m"];
+                jsonConfig["expire_after"] = json["e"];
+            }
+            if (type == HACT_BINARY_SENSOR)
+            {
+                ha_binary_sensor_device_class_t deviceClass = json["h"].as<ha_binary_sensor_device_class_t>();
+                if (deviceClass == HABSDC_MOISTURE)
+                    jsonConfig["expire_after"] = json["e"];
+                jsonConfig["device_class"] = getValueName(deviceClass);
+                jsonConfig["payload_on"] = json["o"];
+                jsonConfig["payload_off"] = json["f"];
+            }
+            jsonConfig["force_update"] = "true";
+            jsonConfig["retain"] = "true";
+            char buffer[2048]{0};
+            serializeJsonPretty(jsonConfig, buffer);
+            mqttPublish((topicPrefix + "/" + getValueName(type) + "/" + id + "-" + unit + "/config").c_str(), buffer, true);
+        }
+        if (incomingData.deviceType == ENDT_RF_GATEWAY)
+        {
+            esp_now_payload_data_t configData;
+            memcpy(&configData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
+            StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+            deserializeJson(json, configData.message);
+            uint8_t unit = json["unit"].as<uint8_t>();
+            StaticJsonDocument<2048> jsonConfig;
+            jsonConfig["platform"] = "mqtt";
+            jsonConfig["name"] = json["name"];
+            jsonConfig["unique_id"] = myNet.macToString(sender) + "-" + unit;
+            jsonConfig["device_class"] = getValueName(json["class"].as<ha_binary_sensor_device_class_t>());
+            jsonConfig["state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/status";
+            jsonConfig["json_attributes_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
+            jsonConfig["payload_on"] = json["payload_on"];
+            jsonConfig["expire_after"] = json["expire_after"];
+            jsonConfig["force_update"] = "true";
+            jsonConfig["retain"] = "true";
+            char buffer[2048]{0};
+            serializeJsonPretty(jsonConfig, buffer);
+            mqttPublish((topicPrefix + "/" + getValueName(json["type"].as<ha_component_type_t>()) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
         }
     }
     if (incomingData.payloadsType == ENPT_FORWARD)
@@ -324,7 +386,8 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
         memcpy(&forwardData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
         StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
         deserializeJson(json, forwardData.message);
-        mqttPublish((topicPrefix + "/rf_sensor/" + getValueName(json["type"].as<rf_sensor_type_t>()) + "/" + json["id"].as<uint16_t>()).c_str(), incomingData.message, false);
+        if (incomingData.deviceType == ENDT_RF_GATEWAY)
+            mqttPublish((topicPrefix + "/rf_sensor/" + getValueName(json["type"].as<rf_sensor_type_t>()) + "/" + json["id"].as<uint16_t>() + "/state").c_str(), incomingData.message, false);
     }
 }
 
