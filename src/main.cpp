@@ -193,12 +193,12 @@ void setup()
 
 void loop()
 {
-    if (mqttAvailabilityCheckTimerSemaphore)
-        checkMqttAvailability();
     if (keepAliveMessageTimerSemaphore)
         sendKeepAliveMessage();
     if (attributesMessageTimerSemaphore)
         sendAttributesMessage();
+    if (mqttAvailabilityCheckTimerSemaphore)
+        checkMqttAvailability();
     if (workMode == ESP_NOW_WIFI)
         mqttWifiClient.loop();
     if (workMode == ESP_NOW_LAN)
@@ -679,6 +679,8 @@ void checkMqttAvailability()
                     mqttWifiClient.subscribe((topicPrefix + "/espnow_led/#").c_str());
 
                     sendConfigMessage();
+                    sendAttributesMessage();
+                    sendKeepAliveMessage();
                 }
             }
 
@@ -696,6 +698,8 @@ void checkMqttAvailability()
                     mqttEthClient.subscribe((topicPrefix + "/espnow_led/#").c_str());
 
                     sendConfigMessage();
+                    sendAttributesMessage();
+                    sendKeepAliveMessage();
                 }
             }
 }
