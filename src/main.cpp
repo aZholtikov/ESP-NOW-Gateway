@@ -403,7 +403,6 @@ void onMqttMessage(char *topic, byte *payload, unsigned int length)
     esp_now_payload_data_t outgoingData;
     outgoingData.deviceType = ENDT_GATEWAY;
     StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
-    mqttPublish((topicPrefix + "/test").c_str(), String(message).c_str(), true);
     if (message == "update" || message == "restart")
     {
         if (mac == myNet.getNodeMac() && message == "restart")
