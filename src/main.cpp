@@ -42,7 +42,7 @@ void checkMqttAvailability(void);
 
 void mqttPublish(const char *topic, const char *payload, bool retained);
 
-const String firmware{"1.41"};
+const String firmware{"1.42"};
 
 String espnowNetName{"DEFAULT"};
 
@@ -403,10 +403,9 @@ void onMqttMessage(char *topic, byte *payload, unsigned int length)
     esp_now_payload_data_t outgoingData;
     outgoingData.deviceType = ENDT_GATEWAY;
     StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+    mqttPublish((topicPrefix + "/test").c_str(), String(message).c_str(), true);
     if (message == "update" || message == "restart")
     {
-        mqttPublish(topic, "", true);
-        mqttPublish((String(topic) + "/status").c_str(), "offline", true);
         if (mac == myNet.getNodeMac() && message == "restart")
             ESP.restart();
         flag = true;
@@ -437,9 +436,7 @@ void onMqttMessage(char *topic, byte *payload, unsigned int length)
             outgoingData.payloadsType = ENPT_RESTART;
         else
             outgoingData.payloadsType = message == "update" ? ENPT_UPDATE : ENPT_SET;
-        char buffer[sizeof(esp_now_payload_data_t::message)]{0};
-        serializeJsonPretty(json, buffer);
-        memcpy(&outgoingData.message, &buffer, sizeof(esp_now_payload_data_t::message));
+        serializeJsonPretty(json, outgoingData.message);
         char temp[sizeof(esp_now_payload_data_t)]{0};
         memcpy(&temp, &outgoingData, sizeof(esp_now_payload_data_t));
         uint8_t target[6];
