@@ -15,13 +15,6 @@
 #include "ESP32SSDP.h"
 #endif
 
-typedef enum : uint8_t
-{
-    ESP_NOW,
-    ESP_NOW_WIFI,
-    ESP_NOW_LAN
-} work_mode_t;
-
 void onEspnowMessage(const char *data, const uint8_t *sender);
 
 void onMqttMessage(char *topic, byte *payload, unsigned int length);
@@ -41,6 +34,13 @@ void setupWebServer(void);
 void checkMqttAvailability(void);
 
 void mqttPublish(const char *topic, const char *payload, bool retained);
+
+typedef enum : uint8_t
+{
+    ESP_NOW,
+    ESP_NOW_WIFI,
+    ESP_NOW_LAN
+} work_mode_t;
 
 const String firmware{"1.42"};
 
