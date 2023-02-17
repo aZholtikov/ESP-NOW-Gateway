@@ -52,14 +52,14 @@ function sendRequest(submit, server) {
 
 function saveSetting(submit) {
     server = "/setting?ssid=" + getValue('ssid') + "&password=" + encodeURIComponent(getValue('password'))
-        + "&host=" + getValue('mqttHostName') + "&port=" + getValue('mqttHostPort')
-        + "&login=" + getValue('mqttUserLogin') + "&pass=" + encodeURIComponent(getValue('mqttUserPassword'))
-        + "&prefix=" + getValue('topicPrefix')
-        + "&name=" + getValue('deviceName')
-        + "&net=" + getValue('espnowNetName')
-        + "&mode=" + getSelectValue('workModeSelect')
-        + "&ntp=" + getValue('ntpHostName')
-        + "&zone=" + getValue('gmtOffset');
+        + "&mqttHostName=" + getValue('mqttHostName') + "&mqttHostPort=" + getValue('mqttHostPort')
+        + "&mqttUserLogin=" + getValue('mqttUserLogin') + "&mqttUserPassword=" + encodeURIComponent(getValue('mqttUserPassword'))
+        + "&topicPrefix=" + getValue('topicPrefix')
+        + "&deviceName=" + getValue('deviceName')
+        + "&espnowNetName=" + getValue('espnowNetName')
+        + "&workMode=" + getSelectValue('workModeSelect')
+        + "&ntpHostName=" + getValue('ntpHostName')
+        + "&gmtOffset=" + getValue('gmtOffset');
     sendRequest(submit, server);
     alert("Please restart device for changes apply.");
 }

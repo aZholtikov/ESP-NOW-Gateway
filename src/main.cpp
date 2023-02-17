@@ -628,16 +628,16 @@ void setupWebServer()
                  {
         ssid = request->getParam("ssid")->value();
         password = request->getParam("password")->value();
-        mqttHostName = request->getParam("host")->value();
-        mqttHostPort = request->getParam("port")->value().toInt();
-        mqttUserLogin = request->getParam("login")->value();
-        mqttUserPassword = request->getParam("pass")->value();
-        topicPrefix = request->getParam("prefix")->value();
-        deviceName = request->getParam("name")->value();
-        espnowNetName = request->getParam("net")->value();
-        workMode = request->getParam("mode")->value().toInt();
-        ntpHostName = request->getParam("ntp")->value();
-        gmtOffset = request->getParam("zone")->value().toInt();
+        mqttHostName = request->getParam("mqttHostName")->value();
+        mqttHostPort = request->getParam("mqttHostPor")->value().toInt();
+        mqttUserLogin = request->getParam("mqttUserLogin")->value();
+        mqttUserPassword = request->getParam("mqttUserPassword")->value();
+        topicPrefix = request->getParam("topicPrefix")->value();
+        deviceName = request->getParam("deviceName")->value();
+        espnowNetName = request->getParam("espnowNetName")->value();
+        workMode = request->getParam("workMode")->value().toInt();
+        ntpHostName = request->getParam("ntpHostName")->value();
+        gmtOffset = request->getParam("gmtOffset")->value().toInt();
         request->send(200);
         saveConfig(); });
 
