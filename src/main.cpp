@@ -42,7 +42,7 @@ typedef enum : uint8_t
     ESP_NOW_LAN
 } work_mode_t;
 
-const String firmware{"1.42"};
+const String firmware{"1.43"};
 
 String espnowNetName{"DEFAULT"};
 
@@ -304,7 +304,11 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["force_update"] = "true";
             jsonConfig["retain"] = "true";
             if (type == HACT_SENSOR)
+            {
                 jsonConfig["device_class"] = getValueName(json["class"].as<ha_sensor_device_class_t>());
+                jsonConfig["unit_of_measurement"] = json["meas"];
+                jsonConfig["expire_after"] = json["time"];
+            }
             if (type == HACT_BINARY_SENSOR)
             {
                 ha_binary_sensor_device_class_t deviceClass = json["class"].as<ha_binary_sensor_device_class_t>();
