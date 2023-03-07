@@ -10,7 +10,7 @@ function createXmlHttpObject() {
 
 function load() {
     if (xmlHttp.readyState == 0 || xmlHttp.readyState == 4) {
-        xmlHttp.open('PUT', '/config.json', true);
+        xmlHttp.open('GET', '/config', true);
         xmlHttp.send(null);
         xmlHttp.onload = function () {
             jsonResponse = JSON.parse(xmlHttp.responseText);

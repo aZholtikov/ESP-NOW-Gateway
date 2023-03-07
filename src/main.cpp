@@ -4,6 +4,7 @@
 #include "Ethernet.h"          // https://github.com/arduino-libraries/Ethernet
 #include "PubSubClient.h"
 #include "LittleFS.h"
+#include "EEPROM.h"
 #include "Ticker.h"
 #include "NTPClient.h"
 #include "ZHNetwork.h"
@@ -42,31 +43,30 @@ typedef enum : uint8_t
     ESP_NOW_LAN
 } work_mode_t;
 
-const String firmware{"1.5"};
-
-String espnowNetName{"DEFAULT"};
-
-uint8_t workMode{ESP_NOW};
-
+struct deviceConfig
+{
 #if defined(ESP8266)
-String deviceName = "ESP-NOW gateway " + String(ESP.getChipId(), HEX);
+    String deviceName = "ESP-NOW gateway " + String(ESP.getChipId(), HEX);
 #endif
 #if defined(ESP32)
-String deviceName = "ESP-NOW gateway " + String(ESP.getEfuseMac(), HEX);
+    String deviceName = "ESP-NOW gateway " + String(ESP.getEfuseMac(), HEX);
 #endif
+    String espnowNetName{"DEFAULT"};
+    uint8_t workMode{ESP_NOW};
+    String ssid{"SSID"};
+    String password{"PASSWORD"};
+    String mqttHostName{"MQTT"};
+    uint16_t mqttHostPort{1883};
+    String mqttUserLogin{""};
+    String mqttUserPassword{""};
+    String topicPrefix{"homeassistant"};
+    String ntpHostName{"NTP"};
+    uint16_t gmtOffset{10800};
+} config;
 
-String ssid{"SSID"};
-String password{"PASSWORD"};
+const String firmware{"1.6"};
 
-String mqttHostName{"MQTT"};
-uint16_t mqttHostPort{1883};
-String mqttUserLogin{""};
-String mqttUserPassword{""};
-String topicPrefix{"homeassistant"};
-const char *mqttUserID{"ESP32"};
-
-String ntpHostName{"NTP"};
-uint16_t gmtOffset{10800};
+const char *mqttUserID{"ESP"};
 
 uint8_t w5500Mac[6] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}; // Change it if necessary.
 
@@ -82,8 +82,8 @@ PubSubClient mqttWifiClient(wifiClient);
 WiFiUDP udpWiFiClient;
 EthernetUDP udpEthClient;
 
-NTPClient ntpWiFiClient(udpWiFiClient, ntpHostName.c_str(), gmtOffset);
-NTPClient ntpEthClient(udpEthClient, ntpHostName.c_str(), gmtOffset);
+NTPClient ntpWiFiClient(udpWiFiClient, config.ntpHostName.c_str(), config.gmtOffset);
+NTPClient ntpEthClient(udpEthClient, config.ntpHostName.c_str(), config.gmtOffset);
 
 Ticker mqttAvailabilityCheckTimer;
 bool mqttAvailabilityCheckTimerSemaphore{true};
@@ -109,13 +109,13 @@ void setup()
 
     loadConfig();
 
-    if (workMode == ESP_NOW_LAN)
+    if (config.workMode == ESP_NOW_LAN)
     {
         Ethernet.init(5);
         Ethernet.begin(w5500Mac);
     }
 
-    if (workMode == ESP_NOW_WIFI)
+    if (config.workMode == ESP_NOW_WIFI)
     {
 #if defined(ESP8266)
         WiFi.setSleepMode(WIFI_NONE_SLEEP);
@@ -128,9 +128,9 @@ void setup()
         WiFi.setAutoReconnect(true);
     }
 
-    myNet.begin(espnowNetName.c_str(), true);
+    myNet.begin(config.espnowNetName.c_str(), true);
 
-    if (workMode)
+    if (config.workMode)
     {
         // myNet.setCryptKey("VERY_LONG_CRYPT_KEY"); // If encryption is used, the key must be set same of all another ESP-NOW devices in network.
         myNet.setOnBroadcastReceivingCallback(onEspnowMessage);
@@ -144,7 +144,7 @@ void setup()
     WiFi.softAP(("ESP-NOW gateway " + String(ESP.getEfuseMac(), HEX)).c_str(), "12345678");
 #endif
 
-    if (workMode == ESP_NOW_WIFI)
+    if (config.workMode == ESP_NOW_WIFI)
     {
         uint8_t scan = WiFi.scanNetworks(false, false);
         String name;
@@ -161,24 +161,24 @@ void setup()
 #if defined(ESP32)
             WiFi.getNetworkInfo(i, name, encryption, rssi, bssid, channel);
 #endif
-            if (name == ssid)
-                WiFi.begin(ssid.c_str(), password.c_str());
+            if (name == config.ssid)
+                WiFi.begin(config.ssid.c_str(), config.password.c_str());
         }
     }
 
-    if (workMode == ESP_NOW_WIFI)
+    if (config.workMode == ESP_NOW_WIFI)
     {
         ntpWiFiClient.begin();
         mqttWifiClient.setBufferSize(2048);
-        mqttWifiClient.setServer(mqttHostName.c_str(), mqttHostPort);
+        mqttWifiClient.setServer(config.mqttHostName.c_str(), config.mqttHostPort);
         mqttWifiClient.setCallback(onMqttMessage);
     }
 
-    if (workMode == ESP_NOW_LAN)
+    if (config.workMode == ESP_NOW_LAN)
     {
         ntpEthClient.begin();
         mqttEthClient.setBufferSize(2048);
-        mqttEthClient.setServer(mqttHostName.c_str(), mqttHostPort);
+        mqttEthClient.setServer(config.mqttHostName.c_str(), config.mqttHostPort);
         mqttEthClient.setCallback(onMqttMessage);
     }
 
@@ -199,9 +199,9 @@ void loop()
         sendKeepAliveMessage();
     if (attributesMessageTimerSemaphore)
         sendAttributesMessage();
-    if (workMode == ESP_NOW_WIFI)
+    if (config.workMode == ESP_NOW_WIFI)
         mqttWifiClient.loop();
-    if (workMode == ESP_NOW_LAN)
+    if (config.workMode == ESP_NOW_LAN)
         mqttEthClient.loop();
     myNet.maintenance();
     ArduinoOTA.handle();
@@ -214,30 +214,30 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
     esp_now_payload_data_t incomingData;
     memcpy(&incomingData, data, sizeof(esp_now_payload_data_t));
     if (incomingData.payloadsType == ENPT_ATTRIBUTES)
-        mqttPublish((topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), incomingData.message, true);
+        mqttPublish((config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), incomingData.message, true);
     if (incomingData.payloadsType == ENPT_KEEP_ALIVE)
-        mqttPublish((topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), "online", true);
+        mqttPublish((config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), "online", true);
     if (incomingData.payloadsType == ENPT_STATE)
-        mqttPublish((topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), incomingData.message, true);
+        mqttPublish((config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/" + getValueName(incomingData.payloadsType)).c_str(), incomingData.message, true);
     if (incomingData.payloadsType == ENPT_CONFIG)
     {
         if (incomingData.deviceType == ENDT_SWITCH)
         {
             esp_now_payload_data_t configData;
             memcpy(&configData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
-            StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+            DynamicJsonDocument json(sizeof(esp_now_payload_data_t::message));
             deserializeJson(json, configData.message);
             uint8_t unit = json[MCMT_DEVICE_UNIT].as<uint8_t>();
-            StaticJsonDocument<2048> jsonConfig;
+            DynamicJsonDocument jsonConfig(2048); // Same as PubSubClient buffer size.
             jsonConfig["platform"] = "mqtt";
             jsonConfig["name"] = json[MCMT_DEVICE_NAME];
             jsonConfig["unique_id"] = myNet.macToString(sender) + "-" + unit;
             jsonConfig["device_class"] = getValueName(json[MCMT_DEVICE_CLASS].as<ha_switch_device_class_t>());
-            jsonConfig["state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
+            jsonConfig["state_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
             jsonConfig["value_template"] = "{{ value_json." + json[MCMT_VALUE_TEMPLATE].as<String>() + " }}";
-            jsonConfig["command_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/set";
-            jsonConfig["json_attributes_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
-            jsonConfig["availability_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/status";
+            jsonConfig["command_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/set";
+            jsonConfig["json_attributes_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
+            jsonConfig["availability_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/status";
             if (json[MCMT_PAYLOAD_ON])
                 jsonConfig["payload_on"] = json[MCMT_PAYLOAD_ON];
             if (json[MCMT_PAYLOAD_OFF])
@@ -246,40 +246,40 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["retain"] = "true";
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttPublish((topicPrefix + "/" + getValueName(json[MCMT_COMPONENT_TYPE].as<ha_component_type_t>()) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
+            mqttPublish((config.topicPrefix + "/" + getValueName(json[MCMT_COMPONENT_TYPE].as<ha_component_type_t>()) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
         }
         if (incomingData.deviceType == ENDT_LED)
         {
             esp_now_payload_data_t configData;
             memcpy(&configData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
-            StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+            DynamicJsonDocument json(sizeof(esp_now_payload_data_t::message));
             deserializeJson(json, configData.message);
             uint8_t unit = json[MCMT_DEVICE_UNIT].as<uint8_t>();
             esp_now_led_type_t ledClass = json[MCMT_DEVICE_CLASS];
-            StaticJsonDocument<2048> jsonConfig;
+            DynamicJsonDocument jsonConfig(2048); // Same as PubSubClient buffer size.
             jsonConfig["platform"] = "mqtt";
             jsonConfig["name"] = json[MCMT_DEVICE_NAME];
             jsonConfig["unique_id"] = myNet.macToString(sender) + "-" + unit;
-            jsonConfig["state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
+            jsonConfig["state_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
             jsonConfig["state_value_template"] = "{{ value_json.state }}";
-            jsonConfig["command_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/set";
-            jsonConfig["brightness_state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
+            jsonConfig["command_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/set";
+            jsonConfig["brightness_state_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
             jsonConfig["brightness_value_template"] = "{{ value_json.brightness }}";
-            jsonConfig["brightness_command_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/brightness";
+            jsonConfig["brightness_command_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/brightness";
             if (ledClass == ENLT_RGB || ledClass == ENLT_RGBW || ledClass == ENLT_RGBWW)
             {
-                jsonConfig["rgb_state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
+                jsonConfig["rgb_state_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
                 jsonConfig["rgb_value_template"] = "{{ value_json.rgb | join(',') }}";
-                jsonConfig["rgb_command_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/rgb";
+                jsonConfig["rgb_command_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/rgb";
             }
             if (ledClass == ENLT_WW || ledClass == ENLT_RGBWW)
             {
-                jsonConfig["color_temp_state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
+                jsonConfig["color_temp_state_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
                 jsonConfig["color_temp_value_template"] = "{{ value_json.temperature }}";
-                jsonConfig["color_temp_command_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/temperature";
+                jsonConfig["color_temp_command_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/temperature";
             }
-            jsonConfig["json_attributes_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
-            jsonConfig["availability_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/status";
+            jsonConfig["json_attributes_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
+            jsonConfig["availability_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/status";
             if (json[MCMT_PAYLOAD_ON])
                 jsonConfig["payload_on"] = json[MCMT_PAYLOAD_ON];
             if (json[MCMT_PAYLOAD_OFF])
@@ -288,23 +288,23 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
             jsonConfig["retain"] = "true";
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttPublish((topicPrefix + "/" + getValueName(json[MCMT_COMPONENT_TYPE].as<ha_component_type_t>()) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
+            mqttPublish((config.topicPrefix + "/" + getValueName(json[MCMT_COMPONENT_TYPE].as<ha_component_type_t>()) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
         }
         if (incomingData.deviceType == ENDT_SENSOR)
         {
             esp_now_payload_data_t configData;
             memcpy(&configData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
-            StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+            DynamicJsonDocument json(sizeof(esp_now_payload_data_t::message));
             deserializeJson(json, configData.message);
             uint8_t unit = json[MCMT_DEVICE_UNIT].as<uint8_t>();
             ha_component_type_t type = json[MCMT_COMPONENT_TYPE].as<ha_component_type_t>();
-            StaticJsonDocument<2048> jsonConfig;
+            DynamicJsonDocument jsonConfig(2048); // Same as PubSubClient buffer size.
             jsonConfig["platform"] = "mqtt";
             jsonConfig["name"] = json[MCMT_DEVICE_NAME];
             jsonConfig["unique_id"] = myNet.macToString(sender) + "-" + unit;
-            jsonConfig["state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
+            jsonConfig["state_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/state";
             jsonConfig["value_template"] = "{{ value_json." + json[MCMT_VALUE_TEMPLATE].as<String>() + " }}";
-            jsonConfig["json_attributes_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
+            jsonConfig["json_attributes_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
             jsonConfig["force_update"] = "true";
             jsonConfig["retain"] = "true";
             if (type == HACT_SENSOR)
@@ -324,77 +324,77 @@ void onEspnowMessage(const char *data, const uint8_t *sender)
                 jsonConfig["payload_off"] = json[MCMT_PAYLOAD_OFF];
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttPublish((topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
+            mqttPublish((config.topicPrefix + "/" + getValueName(type) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
         }
         if (incomingData.deviceType == ENDT_RF_SENSOR)
         {
             esp_now_payload_data_t configData;
             memcpy(&configData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
-            StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+            DynamicJsonDocument json(sizeof(esp_now_payload_data_t::message));
             deserializeJson(json, configData.message);
-            uint8_t unit = json["u"].as<uint8_t>();
-            ha_component_type_t type = json["t"].as<ha_component_type_t>();
-            rf_sensor_type_t rf = json["r"].as<rf_sensor_type_t>();
-            uint16_t id = json["i"].as<uint16_t>();
-            String tmp = json["v"].as<String>();
-            StaticJsonDocument<2048> jsonConfig;
+            uint8_t unit = json[MCMT_DEVICE_UNIT].as<uint8_t>();
+            ha_component_type_t haComponentType = json[MCMT_COMPONENT_TYPE].as<ha_component_type_t>();
+            rf_sensor_type_t rfSensorType = json[MCMT_RF_SENSOR_TYPE].as<rf_sensor_type_t>();
+            uint16_t rfSensorId = json[MCMT_RF_SENSOR_ID].as<uint16_t>();
+            String valueTemplate = json[MCMT_VALUE_TEMPLATE].as<String>();
+            DynamicJsonDocument jsonConfig(2048); // Same as PubSubClient buffer size.
             jsonConfig["platform"] = "mqtt";
-            jsonConfig["name"] = getValueName(rf) + " " + id + " " + tmp;
-            jsonConfig["unique_id"] = String(id) + "-" + unit;
-            jsonConfig["state_topic"] = topicPrefix + "/rf_sensor/" + getValueName(rf) + "/" + id + "/state";
-            jsonConfig["value_template"] = "{{ value_json." + tmp + " }}";
-            if (type == HACT_SENSOR)
-            {
-                jsonConfig["device_class"] = getValueName(json["h"].as<ha_sensor_device_class_t>());
-                jsonConfig["unit_of_measurement"] = json["m"];
-                jsonConfig["expire_after"] = json["e"];
-            }
-            if (type == HACT_BINARY_SENSOR)
-            {
-                ha_binary_sensor_device_class_t deviceClass = json["h"].as<ha_binary_sensor_device_class_t>();
-                if (deviceClass == HABSDC_MOISTURE)
-                    jsonConfig["expire_after"] = json["e"];
-                jsonConfig["device_class"] = getValueName(deviceClass);
-                jsonConfig["payload_on"] = json["o"];
-                jsonConfig["payload_off"] = json["f"];
-            }
+            jsonConfig["name"] = getValueName(rfSensorType) + " " + rfSensorId + " " + valueTemplate;
+            jsonConfig["unique_id"] = String(rfSensorId) + "-" + unit;
+            jsonConfig["state_topic"] = config.topicPrefix + "/rf_sensor/" + getValueName(rfSensorType) + "/" + rfSensorId + "/state";
+            jsonConfig["value_template"] = "{{ value_json." + valueTemplate + " }}";
             jsonConfig["force_update"] = "true";
             jsonConfig["retain"] = "true";
+            if (haComponentType == HACT_SENSOR)
+            {
+                jsonConfig["device_class"] = getValueName(json[MCMT_DEVICE_CLASS].as<ha_sensor_device_class_t>());
+                jsonConfig["unit_of_measurement"] = json[MCMT_UNIT_OF_MEASUREMENT];
+            }
+            if (haComponentType == HACT_BINARY_SENSOR)
+                jsonConfig["device_class"] = getValueName(json[MCMT_DEVICE_CLASS].as<ha_binary_sensor_device_class_t>());
+            if (json[MCMT_EXPIRE_AFTER])
+                jsonConfig["expire_after"] = json[MCMT_EXPIRE_AFTER];
+            if (json[MCMT_OFF_DELAY])
+                jsonConfig["off_delay"] = json[MCMT_OFF_DELAY];
+            if (json[MCMT_PAYLOAD_ON])
+                jsonConfig["payload_on"] = json[MCMT_PAYLOAD_ON];
+            if (json[MCMT_PAYLOAD_OFF])
+                jsonConfig["payload_off"] = json[MCMT_PAYLOAD_OFF];
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttPublish((topicPrefix + "/" + getValueName(type) + "/" + id + "-" + unit + "/config").c_str(), buffer, true);
+            mqttPublish((config.topicPrefix + "/" + getValueName(haComponentType) + "/" + rfSensorId + "-" + unit + "/config").c_str(), buffer, true);
         }
         if (incomingData.deviceType == ENDT_RF_GATEWAY)
         {
             esp_now_payload_data_t configData;
             memcpy(&configData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
-            StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+            DynamicJsonDocument json(sizeof(esp_now_payload_data_t::message));
             deserializeJson(json, configData.message);
-            uint8_t unit = json["unit"].as<uint8_t>();
-            StaticJsonDocument<2048> jsonConfig;
+            uint8_t unit = json[MCMT_DEVICE_UNIT].as<uint8_t>();
+            DynamicJsonDocument jsonConfig(2048); // Same as PubSubClient buffer size.
             jsonConfig["platform"] = "mqtt";
-            jsonConfig["name"] = json["name"];
+            jsonConfig["name"] = json[MCMT_DEVICE_NAME];
             jsonConfig["unique_id"] = myNet.macToString(sender) + "-" + unit;
-            jsonConfig["device_class"] = getValueName(json["class"].as<ha_binary_sensor_device_class_t>());
-            jsonConfig["state_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/status";
-            jsonConfig["json_attributes_topic"] = topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
-            jsonConfig["payload_on"] = json["payload_on"];
-            jsonConfig["expire_after"] = json["expire_after"];
+            jsonConfig["device_class"] = getValueName(json[MCMT_DEVICE_CLASS].as<ha_binary_sensor_device_class_t>());
+            jsonConfig["state_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/status";
+            jsonConfig["json_attributes_topic"] = config.topicPrefix + "/" + getValueName(incomingData.deviceType) + "/" + myNet.macToString(sender) + "/attributes";
+            jsonConfig["payload_on"] = json[MCMT_PAYLOAD_ON];
+            jsonConfig["expire_after"] = json[MCMT_EXPIRE_AFTER];
             jsonConfig["force_update"] = "true";
             jsonConfig["retain"] = "true";
             char buffer[2048]{0};
             serializeJsonPretty(jsonConfig, buffer);
-            mqttPublish((topicPrefix + "/" + getValueName(json["type"].as<ha_component_type_t>()) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
+            mqttPublish((config.topicPrefix + "/" + getValueName(json[MCMT_COMPONENT_TYPE].as<ha_component_type_t>()) + "/" + myNet.macToString(sender) + "-" + unit + "/config").c_str(), buffer, true);
         }
     }
     if (incomingData.payloadsType == ENPT_FORWARD)
     {
         esp_now_payload_data_t forwardData;
         memcpy(&forwardData.message, &incomingData.message, sizeof(esp_now_payload_data_t::message));
-        StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+        DynamicJsonDocument json(sizeof(esp_now_payload_data_t::message));
         deserializeJson(json, forwardData.message);
         if (incomingData.deviceType == ENDT_RF_GATEWAY)
-            mqttPublish((topicPrefix + "/rf_sensor/" + getValueName(json["type"].as<rf_sensor_type_t>()) + "/" + json["id"].as<uint16_t>() + "/state").c_str(), incomingData.message, false);
+            mqttPublish((config.topicPrefix + "/rf_sensor/" + getValueName(json["type"].as<rf_sensor_type_t>()) + "/" + json["id"].as<uint16_t>() + "/state").c_str(), incomingData.message, false);
     }
 }
 
@@ -410,29 +410,29 @@ void onMqttMessage(char *topic, byte *payload, unsigned int length)
     esp_now_payload_data_t outgoingData;
     outgoingData.deviceType = ENDT_GATEWAY;
     outgoingData.payloadsType = ENPT_SET;
-    StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+    DynamicJsonDocument json(sizeof(esp_now_payload_data_t::message));
     if (message == "update" || message == "restart")
     {
         if (mac == myNet.getNodeMac() && message == "restart")
             ESP.restart();
         flag = true;
     }
-    if (String(topic) == topicPrefix + "/espnow_switch/" + mac + "/set" || String(topic) == topicPrefix + "/espnow_led/" + mac + "/set")
+    if (String(topic) == config.topicPrefix + "/espnow_switch/" + mac + "/set" || String(topic) == config.topicPrefix + "/espnow_led/" + mac + "/set")
     {
         flag = true;
         json["set"] = message;
     }
-    if (String(topic) == topicPrefix + "/espnow_led/" + mac + "/brightness")
+    if (String(topic) == config.topicPrefix + "/espnow_led/" + mac + "/brightness")
     {
         flag = true;
         json["brightness"] = message;
     }
-    if (String(topic) == topicPrefix + "/espnow_led/" + mac + "/temperature")
+    if (String(topic) == config.topicPrefix + "/espnow_led/" + mac + "/temperature")
     {
         flag = true;
         json["temperature"] = message;
     }
-    if (String(topic) == topicPrefix + "/espnow_led/" + mac + "/rgb")
+    if (String(topic) == config.topicPrefix + "/espnow_led/" + mac + "/rgb")
     {
         flag = true;
         json["rgb"] = message;
@@ -456,14 +456,14 @@ void sendKeepAliveMessage()
 {
     keepAliveMessageTimerSemaphore = false;
     if (isMqttAvailable)
-        mqttPublish((topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/status").c_str(), "online", true);
+        mqttPublish((config.topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/status").c_str(), "online", true);
     esp_now_payload_data_t outgoingData;
     outgoingData.deviceType = ENDT_GATEWAY;
     outgoingData.payloadsType = ENPT_KEEP_ALIVE;
-    StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+    DynamicJsonDocument json(sizeof(esp_now_payload_data_t::message));
     json["MQTT"] = isMqttAvailable ? "online" : "offline";
     json["frequency"] = 10; // For compatibility with the previous version. Will be removed in future releases.
-    if (workMode == ESP_NOW_WIFI && WiFi.isConnected())
+    if (config.workMode == ESP_NOW_WIFI && WiFi.isConnected())
     {
         ntpWiFiClient.update();
         uint64_t epochTime = ntpWiFiClient.getEpochTime();
@@ -471,7 +471,7 @@ void sendKeepAliveMessage()
         json["time"] = ntpWiFiClient.getFormattedTime();
         json["date"] = String(time->tm_mday) + "." + String(time->tm_mon + 1) + "." + String(time->tm_year + 1900);
     }
-    if (workMode == ESP_NOW_LAN && Ethernet.linkStatus() == LinkON)
+    if (config.workMode == ESP_NOW_LAN && Ethernet.linkStatus() == LinkON)
     {
         ntpEthClient.update();
         uint64_t epochTime = ntpEthClient.getEpochTime();
@@ -496,7 +496,7 @@ void sendAttributesMessage()
     uint32_t mins = secs / 60;
     uint32_t hours = mins / 60;
     uint32_t days = hours / 24;
-    StaticJsonDocument<sizeof(esp_now_payload_data_t::message)> json;
+    DynamicJsonDocument json(sizeof(esp_now_payload_data_t::message));
     json["Type"] = "ESP-NOW gateway";
 #if defined(ESP8266)
     json["MCU"] = "ESP8266";
@@ -507,32 +507,32 @@ void sendAttributesMessage()
     json["MAC"] = myNet.getNodeMac();
     json["Firmware"] = firmware;
     json["Library"] = myNet.getFirmwareVersion();
-    if (workMode == ESP_NOW_WIFI)
+    if (config.workMode == ESP_NOW_WIFI)
         json["IP"] = WiFi.localIP().toString();
-    if (workMode == ESP_NOW_LAN)
+    if (config.workMode == ESP_NOW_LAN)
         json["IP"] = Ethernet.localIP().toString();
     json["Uptime"] = "Days:" + String(days) + " Hours:" + String(hours - (days * 24)) + " Mins:" + String(mins - (hours * 60));
     char buffer[sizeof(esp_now_payload_data_t::message)]{0};
     serializeJsonPretty(json, buffer);
-    mqttPublish((topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/attributes").c_str(), buffer, true);
+    mqttPublish((config.topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/attributes").c_str(), buffer, true);
 }
 
 void sendConfigMessage()
 {
-    StaticJsonDocument<1024> json;
+    DynamicJsonDocument json(2048); // Same as PubSubClient buffer size.
     json["platform"] = "mqtt";
-    json["name"] = deviceName;
+    json["name"] = config.deviceName;
     json["unique_id"] = myNet.getNodeMac() + "-1";
     json["device_class"] = "connectivity";
-    json["state_topic"] = topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/status";
-    json["json_attributes_topic"] = topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/attributes";
+    json["state_topic"] = config.topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/status";
+    json["json_attributes_topic"] = config.topicPrefix + "/espnow_gateway/" + myNet.getNodeMac() + "/attributes";
     json["payload_on"] = "online";
     json["expire_after"] = 30;
     json["force_update"] = "true";
     json["retain"] = "true";
     char buffer[1024]{0};
     serializeJsonPretty(json, buffer);
-    mqttPublish((topicPrefix + "/binary_sensor/" + myNet.getNodeMac() + "-1" + "/config").c_str(), buffer, true);
+    mqttPublish((config.topicPrefix + "/binary_sensor/" + myNet.getNodeMac() + "-1" + "/config").c_str(), buffer, true);
 }
 
 String getValue(String data, char separator, uint8_t index)
@@ -552,47 +552,27 @@ String getValue(String data, char separator, uint8_t index)
 
 void loadConfig()
 {
-    if (!LittleFS.exists("/config.json"))
+    EEPROM.begin(4096);
+    if (EEPROM.read(4095) == 254)
+    {
+        EEPROM.get(0, config);
+        EEPROM.end();
+    }
+    else
+    {
+        EEPROM.end();
         saveConfig();
-    File file = LittleFS.open("/config.json", "r");
-    String jsonFile = file.readString();
-    StaticJsonDocument<1024> json;
-    deserializeJson(json, jsonFile);
-    espnowNetName = json["espnowNetName"].as<String>();
-    deviceName = json["deviceName"].as<String>();
-    ssid = json["ssid"].as<String>();
-    password = json["password"].as<String>();
-    mqttHostName = json["mqttHostName"].as<String>();
-    mqttHostPort = json["mqttHostPort"];
-    mqttUserLogin = json["mqttUserLogin"].as<String>();
-    mqttUserPassword = json["mqttUserPassword"].as<String>();
-    topicPrefix = json["topicPrefix"].as<String>();
-    workMode = json["workMode"];
-    ntpHostName = json["ntpHostName"].as<String>();
-    gmtOffset = json["gmtOffset"];
-    file.close();
+    }
+    delay(50);
 }
 
 void saveConfig()
 {
-    StaticJsonDocument<1024> json;
-    json["firmware"] = firmware;
-    json["espnowNetName"] = espnowNetName;
-    json["deviceName"] = deviceName;
-    json["ssid"] = ssid;
-    json["password"] = password;
-    json["mqttHostName"] = mqttHostName;
-    json["mqttHostPort"] = mqttHostPort;
-    json["mqttUserLogin"] = mqttUserLogin;
-    json["mqttUserPassword"] = mqttUserPassword;
-    json["topicPrefix"] = topicPrefix;
-    json["workMode"] = workMode;
-    json["ntpHostName"] = ntpHostName;
-    json["gmtOffset"] = gmtOffset;
-    json["system"] = "empty";
-    File file = LittleFS.open("/config.json", "w");
-    serializeJsonPretty(json, file);
-    file.close();
+    EEPROM.begin(4096);
+    EEPROM.write(4095, 254);
+    EEPROM.put(0, config);
+    EEPROM.end();
+    delay(50);
 }
 
 String xmlNode(String tags, String data)
@@ -614,7 +594,7 @@ void setupWebServer()
         ssdpHeader = xmlNode("specVersion", ssdpHeader);
         ssdpHeader += xmlNode("URLBase", "http://" + WiFi.localIP().toString());
         String ssdpDescription = xmlNode("deviceType", "upnp:rootdevice");
-        ssdpDescription += xmlNode("friendlyName", deviceName);
+        ssdpDescription += xmlNode("friendlyName", config.deviceName);
         ssdpDescription += xmlNode("presentationURL", "/");
         ssdpDescription += xmlNode("serialNumber", "0000000" + String(random(1000)));
         ssdpDescription += xmlNode("modelName", "ESP-NOW gateway");
@@ -632,38 +612,57 @@ void setupWebServer()
     webServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
                  { request->send(LittleFS, "/index.htm"); });
 
+    webServer.on("/function.js", HTTP_GET, [](AsyncWebServerRequest *request)
+                 { request->send(LittleFS, "/function.js"); });
+
+    webServer.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request)
+                 { request->send(LittleFS, "/style.css"); });
+
     webServer.on("/setting", HTTP_GET, [](AsyncWebServerRequest *request)
                  {
-        ssid = request->getParam("ssid")->value();
-        password = request->getParam("password")->value();
-        mqttHostName = request->getParam("mqttHostName")->value();
-        mqttHostPort = request->getParam("mqttHostPor")->value().toInt();
-        mqttUserLogin = request->getParam("mqttUserLogin")->value();
-        mqttUserPassword = request->getParam("mqttUserPassword")->value();
-        topicPrefix = request->getParam("topicPrefix")->value();
-        deviceName = request->getParam("deviceName")->value();
-        espnowNetName = request->getParam("espnowNetName")->value();
-        workMode = request->getParam("workMode")->value().toInt();
-        ntpHostName = request->getParam("ntpHostName")->value();
-        gmtOffset = request->getParam("gmtOffset")->value().toInt();
+        config.ssid = request->getParam("ssid")->value();
+        config.password = request->getParam("password")->value();
+        config.mqttHostName = request->getParam("mqttHostName")->value();
+        config.mqttHostPort = request->getParam("mqttHostPort")->value().toInt();
+        config.mqttUserLogin = request->getParam("mqttUserLogin")->value();
+        config.mqttUserPassword = request->getParam("mqttUserPassword")->value();
+        config.topicPrefix = request->getParam("topicPrefix")->value();
+        config.deviceName = request->getParam("deviceName")->value();
+        config.espnowNetName = request->getParam("espnowNetName")->value();
+        config.workMode = request->getParam("workMode")->value().toInt();
+        config.ntpHostName = request->getParam("ntpHostName")->value();
+        config.gmtOffset = request->getParam("gmtOffset")->value().toInt();
         request->send(200);
         saveConfig(); });
 
-    webServer.on("/restart", HTTP_GET, [](AsyncWebServerRequest *request)
+    webServer.on("/config", HTTP_GET, [](AsyncWebServerRequest *request)
                  {
-        request->send(200);
+        String configJson;
+        DynamicJsonDocument json(2048); // For overflow protection.
+        json["firmware"] = firmware;
+        json["espnowNetName"] = config.espnowNetName;
+        json["deviceName"] = config.deviceName;
+        json["ssid"] = config.ssid;
+        json["password"] = config.password;
+        json["mqttHostName"] = config.mqttHostName;
+        json["mqttHostPort"] = config.mqttHostPort;
+        json["mqttUserLogin"] = config.mqttUserLogin;
+        json["mqttUserPassword"] = config.mqttUserPassword;
+        json["topicPrefix"] = config.topicPrefix;
+        json["workMode"] = config.workMode;
+        json["ntpHostName"] = config.ntpHostName;
+        json["gmtOffset"] = config.gmtOffset;
+        serializeJsonPretty(json, configJson);
+        request->send(200, "application/json", configJson); });
+
+    webServer.on("/restart", HTTP_GET, [](AsyncWebServerRequest *request)
+                 {request->send(200);
         ESP.restart(); });
 
     webServer.onNotFound([](AsyncWebServerRequest *request)
-                         { 
-        if (LittleFS.exists(request->url()))
-        request->send(LittleFS, request->url());
-        else
-        {
-        request->send(404, "text/plain", "File Not Found");
-        } });
+                         { request->send(404, "text/plain", "File Not Found"); });
 
-    if (workMode == ESP_NOW_WIFI)
+    if (config.workMode == ESP_NOW_WIFI)
         SSDP.begin();
 
     webServer.begin();
@@ -673,18 +672,18 @@ void checkMqttAvailability()
 {
     mqttAvailabilityCheckTimerSemaphore = false;
 
-    if (workMode == ESP_NOW_WIFI)
+    if (config.workMode == ESP_NOW_WIFI)
         if (WiFi.isConnected())
             if (!mqttWifiClient.connected())
             {
                 isMqttAvailable = false;
-                if (mqttWifiClient.connect(mqttUserID, mqttUserLogin.c_str(), mqttUserPassword.c_str()))
+                if (mqttWifiClient.connect(mqttUserID, config.mqttUserLogin.c_str(), config.mqttUserPassword.c_str()))
                 {
                     isMqttAvailable = true;
 
-                    mqttWifiClient.subscribe((topicPrefix + "/espnow_gateway/#").c_str());
-                    mqttWifiClient.subscribe((topicPrefix + "/espnow_switch/#").c_str());
-                    mqttWifiClient.subscribe((topicPrefix + "/espnow_led/#").c_str());
+                    mqttWifiClient.subscribe((config.topicPrefix + "/espnow_gateway/#").c_str());
+                    mqttWifiClient.subscribe((config.topicPrefix + "/espnow_switch/#").c_str());
+                    mqttWifiClient.subscribe((config.topicPrefix + "/espnow_led/#").c_str());
 
                     sendConfigMessage();
                     sendAttributesMessage();
@@ -692,18 +691,18 @@ void checkMqttAvailability()
                 }
             }
 
-    if (workMode == ESP_NOW_LAN)
+    if (config.workMode == ESP_NOW_LAN)
         if (Ethernet.linkStatus() == LinkON)
             if (!mqttEthClient.connected())
             {
                 isMqttAvailable = false;
-                if (mqttEthClient.connect(mqttUserID, mqttUserLogin.c_str(), mqttUserPassword.c_str()))
+                if (mqttEthClient.connect(mqttUserID, config.mqttUserLogin.c_str(), config.mqttUserPassword.c_str()))
                 {
                     isMqttAvailable = true;
 
-                    mqttEthClient.subscribe((topicPrefix + "/espnow_gateway/#").c_str());
-                    mqttEthClient.subscribe((topicPrefix + "/espnow_switch/#").c_str());
-                    mqttEthClient.subscribe((topicPrefix + "/espnow_led/#").c_str());
+                    mqttEthClient.subscribe((config.topicPrefix + "/espnow_gateway/#").c_str());
+                    mqttEthClient.subscribe((config.topicPrefix + "/espnow_switch/#").c_str());
+                    mqttEthClient.subscribe((config.topicPrefix + "/espnow_led/#").c_str());
 
                     sendConfigMessage();
                     sendAttributesMessage();
@@ -714,9 +713,9 @@ void checkMqttAvailability()
 
 void mqttPublish(const char *topic, const char *payload, bool retained)
 {
-    if (workMode == ESP_NOW_WIFI)
+    if (config.workMode == ESP_NOW_WIFI)
         mqttWifiClient.publish(topic, payload, retained);
-    if (workMode == ESP_NOW_LAN)
+    if (config.workMode == ESP_NOW_LAN)
         mqttEthClient.publish(topic, payload, retained);
 }
 
